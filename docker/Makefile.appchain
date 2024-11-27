@@ -51,6 +51,16 @@ probe: $(net)/run.stamp
 		-probe \
 		-probe_count $(probe_count)
 
+.PHONY: init
+init: $(net)
+	$(docker_run) \
+		--volume $(shell readlink -f ./network.yml):/tmp/network.yml \
+		$(docker_image_agent) \
+		bin/network-init.sh \
+			dev-$(shell date +%H%M%S) \
+			/tmp/network.yml \
+			$(dir_base)
+
 .PHONY: stop
 stop:
 	[ -e $(net) ] && cd $(net) && $(docker_compose) down --remove-orphans
