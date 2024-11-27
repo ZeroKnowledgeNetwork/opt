@@ -17,6 +17,7 @@ for var in \
   IMAGE_NODE \
   NODE_ADDRESS \
   NODE_ID \
+  NODE_LOG_LEVEL \
   NODE_METRICS \
   NODE_PORT \
   NODE_TYPE \
@@ -70,6 +71,7 @@ eval ${docker_run} \
   -dir-out ${DIR_BASE} \
   -address ${NODE_ADDRESS} \
   -identifier ${NODE_ID} \
+  -log-level ${NODE_LOG_LEVEL} \
   -metrics ${NODE_METRICS} \
   -port ${NODE_PORT} \
   -type ${NODE_TYPE}
