@@ -43,6 +43,9 @@ cd appchain-agent && make image
 
 # start local appchain instance, then:
 
+# register and activate a network with the local appchain
+net=/tmp/appchain-mixnet make -f Makefile.appchain init
+
 # build the docker image, configure, start the network, wait for the epoch, then probe
 net=/tmp/appchain-mixnet make -f Makefile.appchain start wait probe
 
