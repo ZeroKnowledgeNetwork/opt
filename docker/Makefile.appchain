@@ -18,6 +18,20 @@ probe_count ?= 1
 
 export
 
+.PHONY: help
+help:
+	@echo
+	@echo "These make targets allow you to control the test network:"
+	@echo " image   - build node docker image"
+	@echo " config  - generate config for test network nodes"
+	@echo " init    - register and activate a network with local appchain"
+	@echo " start   - start the testnet"
+	@echo " _start  - start the testnet without re-build/config"
+	@echo " stop    - stop the testnet"
+	@echo " wait    - wait for testnet to have consensus"
+	@echo " probe   - send a probe over the testnet"
+	@echo " clean   - stop, remove docker image and config"
+
 $(net):
 	mkdir -vp $(net)
 
