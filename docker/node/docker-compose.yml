@@ -1,0 +1,33 @@
+x-common-service: &common-service
+  restart: "no"
+  image: ${IMAGE_NODE}
+  user: ${DOCKER_USER}
+  volumes:
+    - ${VOLUME_MIXNET}:${DIR_BASE}
+  network_mode: host
+
+services:
+  mix-agent:
+    <<: *common-service
+    image: ${IMAGE_AGENT}
+    command: >
+      pnpm run agent
+      --ipfs
+      --ipfs-data ${DIR_BASE}/ipfs
+      --listen
+      --key ${DIR_BASE}/${NODE_ID}-auth/appchain.key
+      --socket ${DIR_BASE}/${NODE_ID}-auth/appchain.sock
+      --socket-format cbor
+      --debug
+
+  mix-auth:
+    <<: *common-service
+    command: ${DIR_BIN}/pki -f ${DIR_BASE}/${NODE_ID}-auth/authority.toml
+    depends_on:
+      - mix-agent
+
+  mix:
+    <<: *common-service
+    command: ${DIR_BIN}/server -f ${DIR_BASE}/${NODE_ID}/katzenpost.toml
+    depends_on:
+      - mix-auth
