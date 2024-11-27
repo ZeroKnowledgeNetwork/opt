@@ -2,6 +2,8 @@
 
 set -euo pipefail
 
+network_id=${1:-_} # default to active network
+
 # Load configuration from the .env file in the same directory as the script
 dir_script=$(dirname "$(readlink -f "$0")")
 file_env="${dir_script}/.env"
@@ -56,11 +58,11 @@ eval ${docker_run} \
   pnpm run agent \
     --ipfs \
     --ipfs-data ${DIR_BASE}/ipfs \
-    networks getNetwork _ ${DIR_BASE}/network.yml
+    networks getNetwork ${network_id} ${DIR_BASE}/network.yml
 [ ! -f "${file_network}" ] && echo "Error: Network configuration file not generated." && exit 1
 echo "Network configuration saved to ${file_network}"
 
-# Genrate node configuration
+# Generate node configuration
 echo -e "\nGenerating node configuration..."
 eval ${docker_run} \
   ${IMAGE_NODE} \
