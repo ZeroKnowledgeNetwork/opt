@@ -82,7 +82,7 @@ function gencfg_node () {
     command: >
       pnpm run agent \
         --ipfs \
-        --ipfs-data ${dir_base}/ipfs-data \
+        --ipfs-data ${dir_base}/ipfs \
         --listen \
         --key ${dir_base}/${id}-auth/appchain.key \
         --socket ${dir_base}/${id}-auth/appchain.sock \
