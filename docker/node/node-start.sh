@@ -2,12 +2,12 @@
 
 set -euo pipefail
 
+dir_script=$(dirname "$(readlink -f "$0")")
 network_id=${1:-_} # default to active network
+file_env="${2:-${dir_script}/.env}" # default to .env in this script's directory
 
 # Load configuration from the .env file in the same directory as the script
-dir_script=$(dirname "$(readlink -f "$0")")
-file_env="${dir_script}/.env"
-[ ! -f "${file_env}" ] && echo "Error: .env file not found in ${dir_script}" && exit 1
+[ ! -f "${file_env}" ] && echo "Error: .env file not found: ${file_env}" && exit 1
 echo "Loading environment variables from ${file_env}"
 export $(grep -v '^#' "${file_env}" | xargs)
 
@@ -36,12 +36,13 @@ file_network="${VOLUME_MIXNET}/network.yml"
 if command -v podman >/dev/null; then
   docker="podman"
   docker_user=$(if podman info --format '{{.Host.Security.Rootless}}' | grep -iq "true"; then echo "$(id -u):$(id -g)"; else echo "0:0"; fi)
-  docker_compose="DOCKER_USER=${docker_user} DOCKER_HOST=unix://${XDG_RUNTIME_DIR:-/run/user/$(id -u)}/podman/podman.sock docker compose"
+  docker_compose_env="DOCKER_USER=${docker_user} DOCKER_HOST=unix://${XDG_RUNTIME_DIR:-/run/user/$(id -u)}/podman/podman.sock"
 else
   docker="docker"
   docker_user="${SUDO_UID:-$(id -u)}:${SUDO_GID:-$(id -g)}"
-  docker_compose="DOCKER_USER=${docker_user} docker compose"
+  docker_compose_env="DOCKER_USER=${docker_user}"
 fi
+docker_compose="${docker_compose_env} docker compose --env-file ${file_env}"
 docker_run="${docker} run \
   --network=host \
   --rm \
@@ -81,6 +82,6 @@ echo "Node configuration generated successfully."
 
 # Start services
 echo -e "\nStarting services..."
-eval ${docker_compose} up -d
+eval ${docker_compose} -p ${NODE_ID} up -d
 
 echo -e "\nNode setup and services started successfully."
