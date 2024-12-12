@@ -23,6 +23,9 @@ for var in \
   NODE_METRICS \
   NODE_PORT \
   NODE_TYPE \
+  URL_APPCHAIN_INDEXER \
+  URL_APPCHAIN_PROCESSOR \
+  URL_APPCHAIN_SEQUENCER \
   USE_LOCAL_IMAGES \
   VOLUME_MIXNET \
 ; do
@@ -44,6 +47,9 @@ else
 fi
 docker_compose="${docker_compose_env} docker compose --env-file ${file_env}"
 docker_run="${docker} run \
+  --env URL_APPCHAIN_INDEXER=${URL_APPCHAIN_INDEXER} \
+  --env URL_APPCHAIN_PROCESSOR=${URL_APPCHAIN_PROCESSOR} \
+  --env URL_APPCHAIN_SEQUENCER=${URL_APPCHAIN_SEQUENCER} \
   --network=host \
   --rm \
   --user ${docker_user} \

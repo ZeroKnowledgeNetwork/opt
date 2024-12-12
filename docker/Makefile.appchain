@@ -1,4 +1,7 @@
 net ?= /tmp/appchain-mixnet
+url_appchain_indexer   ?= http://localhost:8081/graphql
+url_appchain_processor ?= http://localhost:8082/graphql
+url_appchain_sequencer ?= http://localhost:8080/graphql
 dir_base := /mixnet
 dir_bin := /opt/zkn
 docker_image ?= zkn/node:latest
@@ -68,6 +71,9 @@ probe: $(net)/run.stamp
 .PHONY: init
 init: $(net)
 	$(docker_run) \
+		--env URL_APPCHAIN_INDEXER=$(url_appchain_indexer) \
+		--env URL_APPCHAIN_PROCESSOR=$(url_appchain_processor) \
+		--env URL_APPCHAIN_SEQUENCER=$(url_appchain_sequencer) \
 		--volume $(shell readlink -f ./network.yml):/tmp/network.yml \
 		$(docker_image_agent) \
 		bin/network-init.sh \
