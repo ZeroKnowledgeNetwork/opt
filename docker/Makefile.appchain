@@ -88,5 +88,9 @@ stop:
 
 .PHONY: clean
 clean: stop
-	$(docker) rmi $(docker_image)
 	rm -rfv $(net)
+
+.PHONY: clean-image
+clean-image:
+	$(docker) rmi $(docker_image)
+	rm -fv $(net)/image.stamp
