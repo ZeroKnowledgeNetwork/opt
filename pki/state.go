@@ -16,6 +16,8 @@ import (
 	"github.com/katzenpost/hpqc/hash"
 	"github.com/katzenpost/hpqc/rand"
 	"github.com/katzenpost/hpqc/sign"
+	signpem "github.com/katzenpost/hpqc/sign/pem"
+	signSchemes "github.com/katzenpost/hpqc/sign/schemes"
 	"github.com/katzenpost/katzenpost/core/epochtime"
 	"github.com/katzenpost/katzenpost/core/pki"
 	"github.com/katzenpost/katzenpost/core/sphinx/constants"
@@ -59,9 +61,9 @@ type state struct {
 	chainBridge *chainbridge.ChainBridge
 	ccbor       cbor.EncMode // a la katzenpost:core/pki/document.go
 
-	// locally registered node(s), only one allowed
-	// authority authentication for descriptor uploads is limited to this
-	registeredLocalNodes map[[publicKeyHashSize]byte]bool
+	// locally registered node, only one allowed
+	// mix descriptor uploads to this authority are restricted to this node
+	authorizedNode *chainbridge.Node
 
 	documents map[uint64]*pki.Document
 
@@ -385,17 +387,13 @@ func (s *state) pruneDocuments() {
 	}
 }
 
-// Ensure that the descriptor is from an allowed peer according to the appchain
+// Ensure that the descriptor is from the local registered node
 func (s *state) isDescriptorAuthorized(desc *pki.MixDescriptor) bool {
-	node, err := s.chNodesGet(desc.Name)
-	if err != nil {
-		s.log.Debugf("state: Failed to retrive node=%s from appchain: %v", desc.Name, err)
-		return false
-	}
+	node := s.authorizedNode
 
 	pk := hash.Sum256(desc.IdentityKey)
 	if pk != hash.Sum256(node.IdentityKey) {
-		s.log.Debugf("state: IdentityKey mismatch for node %s", desc.Name)
+		s.log.Debugf("pki: ❌ isDescriptorAuthorized: IdentityKey mismatch for node %s", desc.Name)
 		return false
 	}
 
@@ -411,6 +409,8 @@ func (s *state) isDescriptorAuthorized(desc *pki.MixDescriptor) bool {
 }
 
 func (s *state) onDescriptorUpload(rawDesc []byte, desc *pki.MixDescriptor, epoch uint64) error {
+	s.log.Noticef("pki: ⭐ onDescriptorUpload; Node name=%v, epoch=%v", desc.Name, epoch)
+
 	// Note: Caller ensures that the epoch is the current epoch +- 1.
 	pk := hash.Sum256(desc.IdentityKey)
 
@@ -488,7 +488,8 @@ func newState(s *Server) (*state, error) {
 	}
 	st.ccbor = ccbor
 
-	chainBridgeLogger := s.logBackend.GetLogger("state:chainBridge")
+	// Init AppChain communications (chainbridge)
+	chainBridgeLogger := s.logBackend.GetLogger("state:chain")
 	st.chainBridge = chainbridge.NewChainBridge(filepath.Join(s.cfg.Server.DataDir, "appchain.sock"))
 	st.chainBridge.SetErrorHandler(func(err error) {
 		chainBridgeLogger.Errorf("Error: %v", err)
@@ -500,21 +501,61 @@ func newState(s *Server) (*state, error) {
 		chainBridgeLogger.Fatalf("Error: %v", err)
 	}
 
-	// Initialize the authorized peer tables.
-	st.registeredLocalNodes = make(map[[publicKeyHashSize]byte]bool)
-	for _, v := range st.s.cfg.Mixes {
-		st.chNodesRegister(v, false, false)
+	// Load the authorized local node from configuration
+
+	// return a single node configuration and its node type
+	extractNodeFromCfg := func() (*config.Node, bool, bool) {
+		if len(st.s.cfg.GatewayNodes) == 1 {
+			return st.s.cfg.GatewayNodes[0], true, false
+		}
+		if len(st.s.cfg.ServiceNodes) == 1 {
+			return st.s.cfg.ServiceNodes[0], false, true
+		}
+		if len(st.s.cfg.Mixes) == 1 {
+			return st.s.cfg.Mixes[0], false, false
+		}
+		return nil, false, false
 	}
-	for _, v := range st.s.cfg.GatewayNodes {
-		st.chNodesRegister(v, true, false)
-	}
-	for _, v := range st.s.cfg.ServiceNodes {
-		st.chNodesRegister(v, false, true)
+	v, isGatewayNode, isServiceNode := extractNodeFromCfg()
+	if v == nil {
+		st.log.Fatalf("❌ Error: Invalid configuration for a single local node")
 	}
 
-	if len(st.registeredLocalNodes) > 1 {
-		st.log.Fatalf("Error: Configuration found for more than one local node")
+	pkiSignatureScheme := signSchemes.ByName(st.s.cfg.Server.PKISignatureScheme)
+	var identityPublicKey sign.PublicKey
+	if filepath.IsAbs(v.IdentityPublicKeyPem) {
+		identityPublicKey, err = signpem.FromPublicPEMFile(v.IdentityPublicKeyPem, pkiSignatureScheme)
+		if err != nil {
+			panic(err)
+		}
+	} else {
+		pemFilePath := filepath.Join(st.s.cfg.Server.DataDir, v.IdentityPublicKeyPem)
+		identityPublicKey, err = signpem.FromPublicPEMFile(pemFilePath, pkiSignatureScheme)
+		if err != nil {
+			panic(err)
+		}
 	}
+
+	// Node Registration: check if node is already registered before registering and rechecking
+	st.authorizedNode, err = st.chNodesGet(v.Identifier)
+	if err != nil {
+		if err := st.chNodesRegister(v, identityPublicKey, isGatewayNode, isServiceNode); err != nil {
+			st.log.Fatalf("❌ Error: node registration failed:", err)
+		}
+		time.Sleep(time.Duration(1) * time.Second)
+		st.authorizedNode, err = st.chNodesGet(v.Identifier)
+		if err != nil {
+			s.log.Fatalf("❌ Error: Failed to get node=%s from appchain: %v", v.Identifier, err)
+		}
+	}
+
+	// Ensure node appchain registration matches the local node configuration
+	pk := hash.Sum256From(identityPublicKey)
+	if pk != hash.Sum256(st.authorizedNode.IdentityKey) {
+		s.log.Fatalf("❌ Error: IdentityKey mismatch between node registration and configuration")
+	}
+
+	st.log.Noticef("✅ Node registered with Identifier '%s', Identity key hash '%x'", v.Identifier, pk)
 
 	st.log.Debugf("State initialized with epoch Period: %s", epochtime.Period)
 

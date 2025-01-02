@@ -240,7 +240,7 @@ func (a *wireAuthenticator) IsPeerValid(creds *wire.PeerCredentials) bool {
 	pk := [hash.HashSize]byte{}
 	copy(pk[:], creds.AdditionalData[:hash.HashSize])
 
-	_, isRegistered := a.s.state.registeredLocalNodes[pk]
+	isRegistered := (pk == hash.Sum256(a.s.state.authorizedNode.IdentityKey))
 	if isRegistered {
 		a.s.log.Debugf("Accepting authority authentication from locally registered node with public key '%x'", pk)
 		a.isMix = true // Gateways and service nodes and mixes are all mixes.
