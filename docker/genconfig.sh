@@ -69,6 +69,7 @@ function gencfg_node () {
   ${gencfg} \
     -type ${type} \
     -identifier ${id} \
+    -log-level DEBUG \
     -metrics ${metrics} \
     -port ${port} \
     || exit 1
