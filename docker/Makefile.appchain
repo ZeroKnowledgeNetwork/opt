@@ -66,6 +66,7 @@ probe: $(net)/run.stamp
 		-config $(dir_base)/client2/client.toml \
 		-log_level DEBUG \
 		-probe \
+		-probe_send_delay 1 \
 		-probe_count $(probe_count)
 
 .PHONY: init
