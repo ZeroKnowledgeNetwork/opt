@@ -38,30 +38,36 @@ To run the Appchain PKI network, ensure the following components are available:
 ### Example Workflow
 
 ```bash
-# build the appchain-agent docker image
-cd appchain-agent && make image
+# with appchain-agent docker image built, and local appchain running
 
-# start local appchain instance, then:
+# a lil helper to decrease verbosity
+alias makea='net=/tmp/mix make -f Makefile.appchain'
+
+# register and activate a network with the local appchain
+makea init
 
 # build the docker image, configure, start the network, wait for the epoch, then probe
-net=/tmp/appchain-mixnet make -f Makefile.appchain start wait probe
+makea start wait probe
 
 # stop the network and clean up
-net=/tmp/appchain-mixnet make -f Makefile.appchain clean
+makea clean
 
 # build the docker image and configure (without starting network)
 # to inspect or manually edit the configuration files before continuing
-net=/tmp/appchain-mixnet make -f Makefile.appchain config
+makea config
 
 # start the network without rebuilding or reconfiguring, wait for the epoch
-net=/tmp/appchain-mixnet make -f Makefile.appchain _start wait
+makea _start wait
 
 # test the network with a client sending 10 test probes
-net=/tmp/appchain-mixnet probe_count=10 make -f Makefile.appchain probe
+makea probe_count=10 probe
 
 # watch log files
 tail -f /tmp/appchain-mixnet/*/*.log
 
 # stop the network (without cleaning up)
-net=/tmp/appchain-mixnet make -f Makefile.appchain stop
+makea stop
+
+# clean up (remove config files)
+makea clean
 ```

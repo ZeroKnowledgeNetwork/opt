@@ -508,7 +508,7 @@ func ParseFlags() GenconfigInput {
 	flag.StringVar(&gi.cfgType, "type", "", "Type of config to generate: mix, gateway, servicenode, client1, client2")
 	flag.StringVar(&gi.identifier, "identifier", "", "Node identifier; lowercase alphanumeric with 4 to 20 characters (default -type)")
 	flag.StringVar(&gi.inputNetworkInfo, "input", "network.yml", "Path to network info file")
-	flag.StringVar(&gi.logLevel, "log-level", "DEBUG", "logging level could be set to: DEBUG, INFO, NOTICE, WARNING, ERROR, CRITICAL")
+	flag.StringVar(&gi.logLevel, "log-level", "INFO", "logging level could be set to: DEBUG, INFO, NOTICE, WARNING, ERROR, CRITICAL")
 	flag.StringVar(&gi.metrics, "metrics", metrics, "Metrics endpoint")
 	flag.StringVar(&gi.outDir, "dir-out", "", "Path to write files to")
 	flag.StringVar(&gi.transport, "transport", transport, "Transport protocol: tcp, quic")

@@ -16,6 +16,9 @@ echo "  docker_image_agent: ${docker_image_agent}"
 echo "  num_gateways: ${num_gateways}"
 echo "  num_servicenodes: ${num_servicenodes}"
 echo "  num_mixes: ${num_mixes}"
+echo "  url_appchain_indexer:   ${url_appchain_indexer}"
+echo "  url_appchain_processor: ${url_appchain_processor}"
+echo "  url_appchain_sequencer: ${url_appchain_sequencer}"
 
 gencfg="${docker} run ${docker_args} --rm \
   --volume $(readlink -f ./network.yml):/tmp/network.yml \
@@ -66,6 +69,7 @@ function gencfg_node () {
   ${gencfg} \
     -type ${type} \
     -identifier ${id} \
+    -log-level DEBUG \
     -metrics ${metrics} \
     -port ${port} \
     || exit 1
@@ -79,10 +83,14 @@ function gencfg_node () {
   ${id}-agent:
     <<: *common-service
     image: ${docker_image_agent}
+    environment:
+      - URL_APPCHAIN_INDEXER=${url_appchain_indexer}
+      - URL_APPCHAIN_PROCESSOR=${url_appchain_processor}
+      - URL_APPCHAIN_SEQUENCER=${url_appchain_sequencer}
     command: >
       pnpm run agent \
         --ipfs \
-        --ipfs-data ${dir_base}/ipfs-data \
+        --ipfs-data ${dir_base}/ipfs \
         --listen \
         --key ${dir_base}/${id}-auth/appchain.key \
         --socket ${dir_base}/${id}-auth/appchain.sock \

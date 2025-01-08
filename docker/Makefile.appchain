@@ -1,4 +1,7 @@
 net ?= /tmp/appchain-mixnet
+url_appchain_indexer   ?= http://localhost:8081/graphql
+url_appchain_processor ?= http://localhost:8082/graphql
+url_appchain_sequencer ?= http://localhost:8080/graphql
 dir_base := /mixnet
 dir_bin := /opt/zkn
 docker_image ?= zkn/node:latest
@@ -17,6 +20,20 @@ num_servicenodes=1
 probe_count ?= 1
 
 export
+
+.PHONY: help
+help:
+	@echo
+	@echo "These make targets allow you to control the test network:"
+	@echo " image   - build node docker image"
+	@echo " config  - generate config for test network nodes"
+	@echo " init    - register and activate a network with local appchain"
+	@echo " start   - start the testnet"
+	@echo " _start  - start the testnet without re-build/config"
+	@echo " stop    - stop the testnet"
+	@echo " wait    - wait for testnet to have consensus"
+	@echo " probe   - send a probe over the testnet"
+	@echo " clean   - stop, remove docker image and config"
 
 $(net):
 	mkdir -vp $(net)
@@ -49,7 +66,21 @@ probe: $(net)/run.stamp
 		-config $(dir_base)/client2/client.toml \
 		-log_level DEBUG \
 		-probe \
+		-probe_send_delay 1 \
 		-probe_count $(probe_count)
+
+.PHONY: init
+init: $(net)
+	$(docker_run) \
+		--env URL_APPCHAIN_INDEXER=$(url_appchain_indexer) \
+		--env URL_APPCHAIN_PROCESSOR=$(url_appchain_processor) \
+		--env URL_APPCHAIN_SEQUENCER=$(url_appchain_sequencer) \
+		--volume $(shell readlink -f ./network.yml):/tmp/network.yml \
+		$(docker_image_agent) \
+		bin/network-init.sh \
+			dev-$(shell date +%H%M%S) \
+			/tmp/network.yml \
+			$(dir_base)
 
 .PHONY: stop
 stop:
@@ -58,5 +89,9 @@ stop:
 
 .PHONY: clean
 clean: stop
-	$(docker) rmi $(docker_image)
 	rm -rfv $(net)
+
+.PHONY: clean-image
+clean-image:
+	$(docker) rmi $(docker_image)
+	rm -fv $(net)/image.stamp
