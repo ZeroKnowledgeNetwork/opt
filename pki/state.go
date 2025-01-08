@@ -531,6 +531,16 @@ func newState(s *Server) (*state, error) {
 	st.s = s
 	st.log = s.logBackend.GetLogger("state")
 
+	// set voting schedule at runtime
+
+	st.log.Debugf("State initialized with epoch Period: %s", epochtime.Period)
+	st.log.Debugf("State initialized with RandomCourtessyDelay: %s", RandomCourtessyDelay)
+	st.log.Debugf("State initialized with MixPublishDeadline: %s", MixPublishDeadline)
+	st.log.Debugf("State initialized with DescriptorBlockDeadline: %s", DescriptorBlockDeadline)
+	st.log.Debugf("State initialized with AuthorityVoteDeadline: %s", AuthorityVoteDeadline)
+	st.log.Debugf("State initialized with PublishConsensusDeadline: %s", PublishConsensusDeadline)
+	st.log.Debugf("State initialized with DocGenerationDeadline: %s", DocGenerationDeadline)
+
 	ccbor, err := cbor.CanonicalEncOptions().EncMode()
 	if err != nil {
 		panic(err)
