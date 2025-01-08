@@ -3,6 +3,7 @@
 package main
 
 import (
+	"crypto/hmac"
 	"errors"
 	"fmt"
 	"path/filepath"
@@ -29,7 +30,7 @@ import (
 
 const (
 	stateBootstrap        = "bootstrap"
-	stateWaitBlockDesc    = "wait_block_desc"
+	stateDescriptorSend   = "descriptor_send"
 	stateAcceptDescriptor = "accept_desc"
 	stateAcceptVote       = "accept_vote"
 	stateConfirmConsensus = "confirm_consensus"
@@ -47,6 +48,7 @@ var (
 	AuthorityVoteDeadline    = epochtime.Period * 3 / 8
 	PublishConsensusDeadline = epochtime.Period * 5 / 8 // Do NOT change this
 	DocGenerationDeadline    = epochtime.Period * 7 / 8
+	RandomCourtessyDelay     = epochtime.Period * 1 / 16 // duration to distribute load across synchronized nodes
 	errGone                  = errors.New("authority: Requested epoch will never get a Document")
 	errNotYet                = errors.New("authority: Document is not ready yet")
 	errInvalidTopology       = errors.New("authority: Invalid Topology")
@@ -65,7 +67,8 @@ type state struct {
 	// mix descriptor uploads to this authority are restricted to this node
 	authorizedNode *chainbridge.Node
 
-	documents map[uint64]*pki.Document
+	documents   map[uint64]*pki.Document
+	descriptors map[uint64]map[[publicKeyHashSize]byte]*pki.MixDescriptor
 
 	votingEpoch  uint64
 	genesisEpoch uint64
@@ -88,6 +91,11 @@ func (s *state) worker() {
 	}
 }
 
+// Returns a random delay to distribute load across synchronized nodes
+func (s *state) courtessyDelay() time.Duration {
+	return time.Duration(rand.NewMath().Float64() * float64(RandomCourtessyDelay))
+}
+
 func (s *state) fsm() <-chan time.Time {
 	s.Lock()
 	var sleep time.Duration
@@ -107,24 +115,30 @@ func (s *state) fsm() <-chan time.Time {
 			s.state = stateBootstrap
 		} else {
 			s.votingEpoch = epoch + 1
-			s.state = stateWaitBlockDesc
-			sleep = MixPublishDeadline - elapsed
+			s.state = stateDescriptorSend
+			sleep = MixPublishDeadline - elapsed + s.courtessyDelay()
 			if sleep < 0 {
 				sleep = 0
 			}
 			s.log.Noticef("Bootstrapping for %d", s.votingEpoch)
 		}
-	case stateWaitBlockDesc:
-		// Wait for appchain block production of all registered descriptors
+	case stateDescriptorSend:
+		// Send mix descriptor to the appchain
+		pk := hash.Sum256(s.authorizedNode.IdentityKey)
+		desc, ok := s.descriptors[s.votingEpoch][pk]
+		if ok {
+			s.submitDescriptorToAppchain(desc, s.votingEpoch)
+		} else {
+			s.log.Errorf("❌ No descriptor for epoch %d", s.votingEpoch)
+		}
 		s.state = stateAcceptDescriptor
-		sleep = DescriptorBlockDeadline - elapsed
+		sleep = DescriptorBlockDeadline - elapsed + s.courtessyDelay()
 	case stateAcceptDescriptor:
 		doc, err := s.getVote(s.votingEpoch)
 		if err == nil {
-			s.log.Noticef("authority: FSM: Sending vote for epoch %d in epoch %d", s.votingEpoch, epoch)
 			s.sendVoteToAppchain(doc, s.votingEpoch)
 		} else {
-			s.log.Errorf("Failed to compute vote for epoch %v: %s", s.votingEpoch, err)
+			s.log.Errorf("❌ Failed to compute vote for epoch %v: %s", s.votingEpoch, err)
 		}
 		s.state = stateAcceptVote
 		_, nowelapsed, _ := epochtime.Now()
@@ -138,8 +152,8 @@ func (s *state) fsm() <-chan time.Time {
 		// See if consensus doc was retrieved from the appchain
 		_, ok := s.documents[epoch+1]
 		if ok {
-			s.state = stateWaitBlockDesc
-			sleep = MixPublishDeadline + nextEpoch
+			s.state = stateDescriptorSend
+			sleep = MixPublishDeadline + nextEpoch + s.courtessyDelay()
 			s.votingEpoch++
 		} else {
 			s.log.Error("No document for epoch %v", epoch+1)
@@ -191,7 +205,9 @@ func (s *state) getVote(epoch uint64) (*pki.Document, error) {
 
 func (s *state) sendVoteToAppchain(doc *pki.Document, epoch uint64) {
 	if err := s.chPKISetDocument(doc); err != nil {
-		s.log.Errorf("❌ sendVoteToAppchain: Error setting document for epoch %v: %v", epoch, err)
+		s.log.Errorf("❌ sendVoteToAppchain: Error setting document for epoch %d: %v", epoch, err)
+	} else {
+		s.log.Noticef("✅ sendVoteToAppchain: Set document for epoch %d", epoch)
 	}
 }
 
@@ -385,6 +401,11 @@ func (s *state) pruneDocuments() {
 			delete(s.documents, e)
 		}
 	}
+	for e := range s.descriptors {
+		if e < cmpEpoch {
+			delete(s.descriptors, e)
+		}
+	}
 }
 
 // Ensure that the descriptor is from the local registered node
@@ -410,30 +431,58 @@ func (s *state) isDescriptorAuthorized(desc *pki.MixDescriptor) bool {
 
 func (s *state) onDescriptorUpload(rawDesc []byte, desc *pki.MixDescriptor, epoch uint64) error {
 	s.log.Noticef("pki: ⭐ onDescriptorUpload; Node name=%v, epoch=%v", desc.Name, epoch)
+	s.Lock()
+	defer s.Unlock()
 
 	// Note: Caller ensures that the epoch is the current epoch +- 1.
 	pk := hash.Sum256(desc.IdentityKey)
 
-	s.RLock()
-	doc := s.documents[epoch]
-	s.RUnlock()
-
-	if doc != nil {
-		// If there is a document already, the descriptor is late, and will
-		// never appear in a document, so reject it.
-		return fmt.Errorf("pki: ❌ Node %x: Late descriptor upload for epoch %v", pk, epoch)
+	// Get the public key -> descriptor map for the epoch.
+	_, ok := s.descriptors[epoch]
+	if !ok {
+		s.descriptors[epoch] = make(map[[publicKeyHashSize]byte]*pki.MixDescriptor)
 	}
 
+	// Check for redundant uploads.
+	d, ok := s.descriptors[epoch][pk]
+	if ok {
+		// If the descriptor changes, then it will be rejected to prevent
+		// nodes from reneging on uploads.
+		serialized, err := d.MarshalBinary()
+		if err != nil {
+			return err
+		}
+		if !hmac.Equal(serialized, rawDesc) {
+			return fmt.Errorf("state: node %s (%x): Conflicting descriptor for epoch %v", desc.Name, hash.Sum256(desc.IdentityKey), epoch)
+		}
+
+		// Redundant uploads that don't change are harmless.
+		return nil
+	}
+
+	// Ok, this is a new descriptor.
+	if s.documents[epoch] != nil {
+		// If there is a document already, the descriptor is late, and will
+		// never appear in a document, so reject it.
+		return fmt.Errorf("state: Node %v: Late descriptor upload for for epoch %v", desc.IdentityKey, epoch)
+	}
+
+	// Store the parsed descriptor
+	s.descriptors[epoch][pk] = desc
+
+	s.log.Noticef("Node %x: Successfully submitted descriptor for epoch %v.", pk, epoch)
+	return nil
+}
+
+func (s *state) submitDescriptorToAppchain(desc *pki.MixDescriptor, epoch uint64) {
 	// Register the mix descriptor with the appchain, which will:
 	// - reject redundant descriptors (even those that didn't change)
 	// - reject descriptors if document for the epoch exists
 	if err := s.chPKISetMixDescriptor(desc, epoch); err != nil {
-		return fmt.Errorf("pki: ❌ Failed to set mix descriptor for node %d, epoch=%v: %v", desc.Name, epoch, err)
+		s.log.Errorf("❌ submitDescriptorToAppchain: Failed to set mix descriptor for node %v, epoch=%v: %v", desc.Name, epoch, err)
 	}
-
 	epochCurrent, _, _ := epochtime.Now()
-	s.log.Noticef("pki: ✅ Submitted descriptor to appchain for Node name=%v, epoch=%v (in epoch=%v)", desc.Name, epoch, epochCurrent)
-	return nil
+	s.log.Noticef("✅ submitDescriptorToAppchain: Submitted descriptor to appchain for node %v, epoch=%v (in epoch=%v)", desc.Name, epoch, epochCurrent)
 }
 
 func (s *state) documentForEpoch(epoch uint64) ([]byte, error) {
@@ -560,6 +609,7 @@ func newState(s *Server) (*state, error) {
 	st.log.Debugf("State initialized with epoch Period: %s", epochtime.Period)
 
 	st.documents = make(map[uint64]*pki.Document)
+	st.descriptors = make(map[uint64]map[[publicKeyHashSize]byte]*pki.MixDescriptor)
 
 	epoch, elapsed, nextEpoch := epochtime.Now()
 	st.log.Debugf("Epoch: %d, elapsed: %s, remaining time: %s", epoch, elapsed, nextEpoch)
