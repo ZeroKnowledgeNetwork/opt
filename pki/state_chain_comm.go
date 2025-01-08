@@ -4,13 +4,9 @@ package main
 
 import (
 	"fmt"
-	"path/filepath"
 
 	"github.com/fxamacker/cbor/v2"
-	"github.com/katzenpost/hpqc/hash"
 	"github.com/katzenpost/hpqc/sign"
-	signpem "github.com/katzenpost/hpqc/sign/pem"
-	signSchemes "github.com/katzenpost/hpqc/sign/schemes"
 	"github.com/katzenpost/katzenpost/core/pki"
 
 	"github.com/0KnowledgeNetwork/appchain-agent/clients/go/chainbridge"
@@ -32,30 +28,11 @@ func (s *state) chNodesGet(name string) (*chainbridge.Node, error) {
 	return &node, nil
 }
 
-func (st *state) chNodesRegister(v *config.Node, isGatewayNode bool, isServiceNode bool) {
-	pkiSignatureScheme := signSchemes.ByName(st.s.cfg.Server.PKISignatureScheme)
-
-	var err error
-	var identityPublicKey sign.PublicKey
-	if filepath.IsAbs(v.IdentityPublicKeyPem) {
-		identityPublicKey, err = signpem.FromPublicPEMFile(v.IdentityPublicKeyPem, pkiSignatureScheme)
-		if err != nil {
-			panic(err)
-		}
-	} else {
-		pemFilePath := filepath.Join(st.s.cfg.Server.DataDir, v.IdentityPublicKeyPem)
-		identityPublicKey, err = signpem.FromPublicPEMFile(pemFilePath, pkiSignatureScheme)
-		if err != nil {
-			panic(err)
-		}
-	}
-
+func (st *state) chNodesRegister(v *config.Node, identityPublicKey sign.PublicKey, isGatewayNode bool, isServiceNode bool) error {
 	payload, err := identityPublicKey.MarshalBinary()
 	if err != nil {
-		st.log.Errorf("failed to marshal identityPublicKey: %v", err)
-		return
+		return fmt.Errorf("failed to marshal identityPublicKey: %v", err)
 	}
-	pk := hash.Sum256From(identityPublicKey)
 	chCommand := fmt.Sprintf(
 		chainbridge.Cmd_nodes_register,
 		v.Identifier,
@@ -64,16 +41,13 @@ func (st *state) chNodesRegister(v *config.Node, isGatewayNode bool, isServiceNo
 	chResponse, err := st.chainBridge.Command(chCommand, payload)
 	st.log.Debugf("ChainBridge response (%s): %+v", chCommand, chResponse)
 	if err != nil {
-		st.log.Errorf("ChainBridge command error: %v", err)
-		return
+		return fmt.Errorf("ChainBridge command error: %v", err)
 	}
 	if chResponse.Error != "" && chResponse.Error != chainbridge.Err_nodes_alreadyRegistered {
-		st.log.Errorf("ChainBridge response error: %v", chResponse.Error)
-		return
+		return fmt.Errorf("ChainBridge response error: %v", chResponse.Error)
 	}
 
-	st.registeredLocalNodes[pk] = true
-	st.log.Noticef("Local node registered with Identifier '%s', Identity key hash '%x'", v.Identifier, pk)
+	return nil
 }
 
 func (s *state) chPKIGetGenesisEpoch() (uint64, error) {
