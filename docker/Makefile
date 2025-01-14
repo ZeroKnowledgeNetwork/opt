@@ -23,7 +23,8 @@ mount_opt=-v $(shell readlink -f ..):/go/opt
 docker_run_sh=$(docker) run ${docker_args} $(mount_net_name) $(mount_opt) --rm katzenpost-$(distro)_base $(sh) -c
 
 katzenpost_dir?=/tmp/katzenpost.opt
-katzenpost_version?=$(shell grep -E '^	github.com/katzenpost/katzenpost ' ../go.mod | awk '{print $$2}')
+#katzenpost_version?=$(shell grep -E '^	github.com/katzenpost/katzenpost ' ../go.mod | awk '{print $$2}')
+katzenpost_version=rc-v0.0.44
 net_dir=$(katzenpost_dir)/docker/$(net_name)
 
 # export variables to the environment for consumption by invoked Makefile(s)
