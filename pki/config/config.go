@@ -2,6 +2,7 @@
 package config
 
 import (
+	"bytes"
 	"errors"
 	"fmt"
 	"io"
@@ -11,9 +12,14 @@ import (
 	"strings"
 
 	"github.com/BurntSushi/toml"
+	"golang.org/x/net/idna"
 
+	"github.com/katzenpost/hpqc/hash"
+	"github.com/katzenpost/hpqc/kem"
+	kempem "github.com/katzenpost/hpqc/kem/pem"
 	"github.com/katzenpost/hpqc/kem/schemes"
 	"github.com/katzenpost/hpqc/rand"
+	"github.com/katzenpost/hpqc/sign"
 	signpem "github.com/katzenpost/hpqc/sign/pem"
 	signSchemes "github.com/katzenpost/hpqc/sign/schemes"
 	"github.com/katzenpost/katzenpost/core/sphinx/geo"
@@ -241,6 +247,126 @@ func (dCfg *Debug) applyDefaults() {
 	}
 }
 
+// Authority is the authority configuration for a peer.
+type Authority struct {
+	// Identifier is the human readable identifier for the node (eg: FQDN).
+	Identifier string
+
+	// IdentityPublicKeyPem is a string in PEM format containing
+	// the public identity key key.
+	IdentityPublicKey sign.PublicKey
+
+	// PKISignatureScheme specifies the cryptographic signature scheme
+	PKISignatureScheme string
+
+	// LinkPublicKeyPem is string containing the PEM format of the peer's public link layer key.
+	LinkPublicKey kem.PublicKey
+	// WireKEMScheme is the wire protocol KEM scheme to use.
+	WireKEMScheme string
+	// Addresses are the listener addresses specified by a URL, e.g. tcp://1.2.3.4:1234 or quic://1.2.3.4:1234
+	// Both IPv4 and IPv6 as well as hostnames are valid.
+	Addresses []string
+}
+
+// UnmarshalTOML deserializes into non-nil instances of sign.PublicKey and kem.PublicKey
+func (a *Authority) UnmarshalTOML(v interface{}) error {
+
+	data, ok := v.(map[string]interface{})
+	if !ok {
+		return errors.New("type assertion failed")
+	}
+
+	pkiSignatureSchemeStr, ok := data["PKISignatureScheme"].(string)
+	if !ok {
+		return errors.New("PKISignatureScheme failed type assertion")
+	}
+	pkiSignatureScheme := signSchemes.ByName(pkiSignatureSchemeStr)
+	if pkiSignatureScheme == nil {
+		return fmt.Errorf("pki signature scheme `%s` not found", pkiSignatureScheme)
+	}
+	a.PKISignatureScheme = pkiSignatureSchemeStr
+
+	// identifier
+	var err error
+	a.IdentityPublicKey, _, err = pkiSignatureScheme.GenerateKey()
+	if err != nil {
+		return err
+	}
+	a.Identifier, ok = data["Identifier"].(string)
+	if !ok {
+		return errors.New("Authority.Identifier type assertion failed")
+	}
+
+	// identity key
+	idPublicKeyString, _ := data["IdentityPublicKey"].(string)
+
+	a.IdentityPublicKey, err = signpem.FromPublicPEMString(idPublicKeyString, pkiSignatureScheme)
+	if err != nil {
+		return err
+	}
+
+	// link key
+	linkPublicKeyString, ok := data["LinkPublicKey"].(string)
+	if !ok {
+		return errors.New("type assertion failed")
+	}
+
+	kemSchemeName, ok := data["WireKEMScheme"].(string)
+	if !ok {
+		return errors.New("WireKEMScheme failed type assertion")
+	}
+
+	a.WireKEMScheme = kemSchemeName
+	s := schemes.ByName(kemSchemeName)
+	if s == nil {
+		return fmt.Errorf("scheme `%s` not found", a.WireKEMScheme)
+	}
+	a.LinkPublicKey, err = kempem.FromPublicPEMString(linkPublicKeyString, s)
+	if err != nil {
+		return err
+	}
+
+	// address
+	addresses := make([]string, 0)
+	pos, ok := data["Addresses"]
+	if !ok {
+		return errors.New("map entry not found")
+	}
+	for _, addr := range pos.([]interface{}) {
+		addresses = append(addresses, addr.(string))
+	}
+	a.Addresses = addresses
+	return nil
+}
+
+// Validate parses and checks the Authority configuration.
+func (a *Authority) Validate() error {
+	if a.WireKEMScheme == "" {
+		return errors.New("WireKEMScheme is not set")
+	} else {
+		s := schemes.ByName(a.WireKEMScheme)
+		if s == nil {
+			return errors.New("KEM Scheme not found")
+		}
+	}
+	for _, v := range a.Addresses {
+		if u, err := url.Parse(v); err != nil {
+			return fmt.Errorf("config: Authority: Address '%v' is invalid: %v", v, err)
+		} else if u.Port() == "" {
+			return fmt.Errorf("config: Authority: Address '%v' is invalid: Must contain Port", v)
+		}
+	}
+	if a.IdentityPublicKey == nil {
+		return fmt.Errorf("config: %v: Authority is missing Identity Key", a)
+	}
+
+	if a.LinkPublicKey == nil {
+		return fmt.Errorf("config: %v: Authority is missing Link Key PEM filename", a)
+	}
+
+	return nil
+}
+
 // Node is an authority mix node or provider entry.
 type Node struct {
 	// Identifier is the human readable node identifier, to be set iff
@@ -250,6 +376,21 @@ type Node struct {
 	// IdentityPublicKeyPem is the node's public signing key also known
 	// as the identity key.
 	IdentityPublicKeyPem string
+}
+
+func (n *Node) validate(isProvider bool) error {
+	if n.Identifier == "" {
+		return errors.New("config: Node is missing Identifier")
+	}
+	var err error
+	n.Identifier, err = idna.Lookup.ToASCII(n.Identifier)
+	if err != nil {
+		return fmt.Errorf("config: Failed to normalize Identifier: %v", err)
+	}
+	if n.IdentityPublicKeyPem == "" {
+		return errors.New("config: Node is missing IdentityPublicKeyPem")
+	}
+	return nil
 }
 
 type Server struct {
@@ -316,16 +457,17 @@ func (sCfg *Server) validate() error {
 
 // Config is the top level authority configuration.
 type Config struct {
-	Server     *Server
-	Logging    *Logging
-	Parameters *Parameters
-	Debug      *Debug
+	Server      *Server
+	Authorities []*Authority
+	Logging     *Logging
+	Parameters  *Parameters
+	Debug       *Debug
 
-	// Note: these are an iterative step; useful to register non-volunteer nodes within the appchain
-	Mixes        []*Node
-	GatewayNodes []*Node
-	ServiceNodes []*Node
-	Topology     *Topology
+	Mixes           []*Node
+	GatewayNodes    []*Node
+	ServiceNodes    []*Node
+	StorageReplicas []*Node
+	Topology        *Topology
 
 	SphinxGeometry *geo.Geometry
 }
@@ -338,6 +480,30 @@ type Layer struct {
 // Topology contains a slice of Layers, each containing a slice of Nodes
 type Topology struct {
 	Layers []Layer
+}
+
+// ValidateAuthorities takes as an argument the dirauth server's own public key
+// and tries to find a match in the dirauth peers. Returns an error if no
+// match is found. Dirauths must be their own peer.
+func (cfg *Config) ValidateAuthorities(linkPubKey kem.PublicKey) error {
+	linkblob1, err := linkPubKey.MarshalText()
+	if err != nil {
+		return err
+	}
+	match := false
+	for i := 0; i < len(cfg.Authorities); i++ {
+		linkblob, err := cfg.Authorities[i].LinkPublicKey.MarshalText()
+		if err != nil {
+			return err
+		}
+		if bytes.Equal(linkblob1, linkblob) {
+			match = true
+		}
+	}
+	if !match {
+		return errors.New("Authority must be it's own peer")
+	}
+	return nil
 }
 
 // FixupAndValidate applies defaults to config entries and validates the
@@ -387,9 +553,81 @@ func (cfg *Config) FixupAndValidate(forceGenOnly bool) error {
 
 	pkiSignatureScheme := signSchemes.ByName(cfg.Server.PKISignatureScheme)
 
+	allNodes := make([]*Node, 0, len(cfg.Mixes)+len(cfg.GatewayNodes)+len(cfg.ServiceNodes))
+	for _, v := range cfg.Mixes {
+		allNodes = append(allNodes, v)
+	}
+	for _, v := range cfg.GatewayNodes {
+		allNodes = append(allNodes, v)
+	}
+	for _, v := range cfg.ServiceNodes {
+		allNodes = append(allNodes, v)
+	}
+
+	var identityKey sign.PublicKey
+
 	if forceGenOnly {
 		return nil
 	}
+
+	idMap := make(map[string]*Node)
+	pkMap := make(map[[publicKeyHashSize]byte]*Node)
+	for _, v := range allNodes {
+		if _, ok := idMap[v.Identifier]; ok {
+			return fmt.Errorf("config: Node: Identifier '%v' is present more than once", v.Identifier)
+		}
+		if err := v.validate(true); err != nil {
+			return err
+		}
+		idMap[v.Identifier] = v
+
+		// Note: ZK-PKI: respect absolute or relative file paths
+		pemFilePath := v.IdentityPublicKeyPem
+		if !filepath.IsAbs(pemFilePath) {
+			pemFilePath = filepath.Join(cfg.Server.DataDir, pemFilePath)
+		}
+		identityKey, err = signpem.FromPublicPEMFile(pemFilePath, pkiSignatureScheme)
+		if err != nil {
+			return err
+		}
+
+		tmp := hash.Sum256From(identityKey)
+		if _, ok := pkMap[tmp]; ok {
+			return fmt.Errorf("config: Nodes: IdentityPublicKeyPem '%v' is present more than once", v.IdentityPublicKeyPem)
+		}
+		pkMap[tmp] = v
+	}
+
+	idMap = make(map[string]*Node)
+	pkMap = make(map[[publicKeyHashSize]byte]*Node)
+	for _, v := range cfg.StorageReplicas {
+		if _, ok := idMap[v.Identifier]; ok {
+			return fmt.Errorf("config: Storage Replica Node: Identifier '%v' is present more than once", v.Identifier)
+		}
+		if err := v.validate(true); err != nil {
+			return err
+		}
+		idMap[v.Identifier] = v
+
+		// Note: ZK-PKI: respect absolute or relative file paths
+		pemFilePath := v.IdentityPublicKeyPem
+		if !filepath.IsAbs(pemFilePath) {
+			pemFilePath = filepath.Join(cfg.Server.DataDir, pemFilePath)
+		}
+		identityKey, err = signpem.FromPublicPEMFile(pemFilePath, pkiSignatureScheme)
+		if err != nil {
+			return err
+		}
+
+		tmp := hash.Sum256From(identityKey)
+		if _, ok := pkMap[tmp]; ok {
+			return fmt.Errorf("config: Storage Replica Node: IdentityPublicKeyPem '%v' is present more than once", v.IdentityPublicKeyPem)
+		}
+		pkMap[tmp] = v
+	}
+
+	// if our own identity is not in cfg.Authorities return error
+	selfInAuthorities := false
 
 	ourPubKeyFile := filepath.Join(cfg.Server.DataDir, "identity.public.pem")
 	f, err := os.Open(ourPubKeyFile)
@@ -401,11 +639,24 @@ func (cfg *Config) FixupAndValidate(forceGenOnly bool) error {
 		return err
 	}
 
-	_, err = signpem.FromPublicPEMBytes(pemData, pkiSignatureScheme)
+	ourPubKey, err := signpem.FromPublicPEMBytes(pemData, pkiSignatureScheme)
 	if err != nil {
 		return err
 	}
+	ourPubKeyHash := hash.Sum256From(ourPubKey)
+	for _, auth := range cfg.Authorities {
+		err := auth.Validate()
+		if err != nil {
+			return err
+		}
 
+		if hash.Sum256From(auth.IdentityPublicKey) == ourPubKeyHash {
+			selfInAuthorities = true
+		}
+	}
+	if !selfInAuthorities {
+		return errors.New("Authorities section must contain self")
+	}
 	return nil
 }
 

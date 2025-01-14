@@ -22,6 +22,7 @@ import (
 	"github.com/katzenpost/katzenpost/core/epochtime"
 	"github.com/katzenpost/katzenpost/core/pki"
 	"github.com/katzenpost/katzenpost/core/sphinx/constants"
+	"github.com/katzenpost/katzenpost/core/sphinx/geo"
 	"github.com/katzenpost/katzenpost/core/worker"
 
 	"github.com/0KnowledgeNetwork/appchain-agent/clients/go/chainbridge"
@@ -59,6 +60,7 @@ type state struct {
 	worker.Worker
 
 	s           *Server
+	geo         *geo.Geometry
 	log         *logging.Logger
 	chainBridge *chainbridge.ChainBridge
 	ccbor       cbor.EncMode // a la katzenpost:core/pki/document.go
@@ -67,8 +69,11 @@ type state struct {
 	// mix descriptor uploads to this authority are restricted to this node
 	authorizedNode *chainbridge.Node
 
-	documents   map[uint64]*pki.Document
-	descriptors map[uint64]map[[publicKeyHashSize]byte]*pki.MixDescriptor
+	authorizedReplicaNodes map[[publicKeyHashSize]byte]string
+
+	documents          map[uint64]*pki.Document
+	descriptors        map[uint64]map[[publicKeyHashSize]byte]*pki.MixDescriptor
+	replicaDescriptors map[uint64]map[[publicKeyHashSize]byte]*pki.ReplicaDescriptor
 
 	votingEpoch  uint64
 	genesisEpoch uint64
@@ -91,7 +96,7 @@ func (s *state) worker() {
 	}
 }
 
-// Returns a random delay to distribute load across synchronized nodes
+// ZKN-PKI: Returns a random delay to distribute load across synchronized nodes
 func (s *state) courtessyDelay() time.Duration {
 	return time.Duration(rand.NewMath().Float64() * float64(RandomCourtessyDelay))
 }
@@ -186,10 +191,15 @@ func (s *state) getVote(epoch uint64) (*pki.Document, error) {
 		return nil, err
 	}
 
+	replicaDescriptors := []*pki.ReplicaDescriptor{}
+	for _, desc := range s.replicaDescriptors[epoch] {
+		replicaDescriptors = append(replicaDescriptors, desc)
+	}
+
 	// vote topology is irrelevent.
 	// TODO: use an appchain block hash as srv
 	var zeros [32]byte
-	doc := s.getDocument(descriptors, s.s.cfg.Parameters, zeros[:])
+	doc := s.getDocument(descriptors, replicaDescriptors, s.s.cfg.Parameters, zeros[:])
 
 	// Note: For appchain-pki, upload unsigned document and sign it upon local save.
 	// simulate SignDocument's setting of doc version, required by IsDocumentWellFormed
@@ -218,7 +228,7 @@ func (s *state) doSignDocument(signer sign.PrivateKey, verifier sign.PublicKey, 
 	return sig, err
 }
 
-func (s *state) getDocument(descriptors []*pki.MixDescriptor, params *config.Parameters, srv []byte) *pki.Document {
+func (s *state) getDocument(descriptors []*pki.MixDescriptor, replicaDescriptors []*pki.ReplicaDescriptor, params *config.Parameters, srv []byte) *pki.Document {
 	// Carve out the descriptors between providers and nodes.
 	gateways := []*pki.MixDescriptor{}
 	serviceNodes := []*pki.MixDescriptor{}
@@ -270,9 +280,10 @@ func (s *state) getDocument(descriptors []*pki.MixDescriptor, params *config.Par
 		Topology:           topology,
 		GatewayNodes:       gateways,
 		ServiceNodes:       serviceNodes,
+		StorageReplicas:    replicaDescriptors,
 		SharedRandomValue:  srv,
-		PriorSharedRandom:  [][]byte{srv}, // this is made up, only to suffice IsDocumentWellFormed
-		SphinxGeometryHash: s.s.geo.Hash(),
+		PriorSharedRandom:  [][]byte{srv}, // ZKN-PKI: this is made up, only to suffice IsDocumentWellFormed
+		SphinxGeometryHash: s.geo.Hash(),
 		PKISignatureScheme: s.s.cfg.Server.PKISignatureScheme,
 	}
 	return doc
@@ -406,6 +417,20 @@ func (s *state) pruneDocuments() {
 			delete(s.descriptors, e)
 		}
 	}
+	for e := range s.replicaDescriptors {
+		if e < cmpEpoch {
+			delete(s.replicaDescriptors, e)
+		}
+	}
+}
+
+func (s *state) isReplicaDescriptorAuthorized(desc *pki.ReplicaDescriptor) bool {
+	pk := hash.Sum256(desc.IdentityKey)
+	name, ok := s.authorizedReplicaNodes[pk]
+	if !ok {
+		return false
+	}
+	return name == desc.Name
 }
 
 // Ensure that the descriptor is from the local registered node
@@ -474,6 +499,50 @@ func (s *state) onDescriptorUpload(rawDesc []byte, desc *pki.MixDescriptor, epoc
 	return nil
 }
 
+func (s *state) onReplicaDescriptorUpload(rawDesc []byte, desc *pki.ReplicaDescriptor, epoch uint64) error {
+	s.Lock()
+	defer s.Unlock()
+
+	// Note: Caller ensures that the epoch is the current epoch +- 1.
+	pk := hash.Sum256(desc.IdentityKey)
+
+	// Get the public key -> descriptor map for the epoch.
+	_, ok := s.replicaDescriptors[epoch]
+	if !ok {
+		s.replicaDescriptors[epoch] = make(map[[publicKeyHashSize]byte]*pki.ReplicaDescriptor)
+	}
+
+	// Check for redundant uploads.
+	d, ok := s.replicaDescriptors[epoch][pk]
+	if ok {
+		// If the descriptor changes, then it will be rejected to prevent
+		// nodes from reneging on uploads.
+		serialized, err := d.Marshal()
+		if err != nil {
+			return err
+		}
+		if !hmac.Equal(serialized, rawDesc) {
+			return fmt.Errorf("state: node %s (%x): Conflicting descriptor for epoch %v", desc.Name, hash.Sum256(desc.IdentityKey), epoch)
+		}
+
+		// Redundant uploads that don't change are harmless.
+		return nil
+	}
+
+	// Ok, this is a new descriptor.
+	if s.documents[epoch] != nil {
+		// If there is a document already, the descriptor is late, and will
+		// never appear in a document, so reject it.
+		return fmt.Errorf("state: Node %v: Late descriptor upload for for epoch %v", desc.IdentityKey, epoch)
+	}
+
+	// Store the parsed descriptor
+	s.replicaDescriptors[epoch][pk] = desc
+
+	s.log.Noticef("Node %x: Successfully submitted replica descriptor for epoch %v.", pk, epoch)
+	return nil
+}
+
 func (s *state) submitDescriptorToAppchain(desc *pki.MixDescriptor, epoch uint64) {
 	// Register the mix descriptor with the appchain, which will:
 	// - reject redundant descriptors (even those that didn't change)
@@ -529,6 +598,7 @@ func (s *state) documentForEpoch(epoch uint64) ([]byte, error) {
 func newState(s *Server) (*state, error) {
 	st := new(state)
 	st.s = s
+	st.geo = s.geo
 	st.log = s.logBackend.GetLogger("state")
 
 	// set voting schedule at runtime
@@ -615,6 +685,28 @@ func newState(s *Server) (*state, error) {
 	}
 
 	st.log.Noticef("✅ Node registered with Identifier '%s', Identity key hash '%x'", v.Identifier, pk)
+
+	st.authorizedReplicaNodes = make(map[[publicKeyHashSize]byte]string)
+	for _, v := range st.s.cfg.StorageReplicas {
+		var identityPublicKey sign.PublicKey
+		var err error
+
+		if filepath.IsAbs(v.IdentityPublicKeyPem) {
+			identityPublicKey, err = signpem.FromPublicPEMFile(v.IdentityPublicKeyPem, pkiSignatureScheme)
+			if err != nil {
+				panic(err)
+			}
+		} else {
+			pemFilePath := filepath.Join(s.cfg.Server.DataDir, v.IdentityPublicKeyPem)
+			identityPublicKey, err = signpem.FromPublicPEMFile(pemFilePath, pkiSignatureScheme)
+			if err != nil {
+				panic(err)
+			}
+		}
+
+		pk := hash.Sum256From(identityPublicKey)
+		st.authorizedReplicaNodes[pk] = v.Identifier
+	}
 
 	st.log.Debugf("State initialized with epoch Period: %s", epochtime.Period)
 

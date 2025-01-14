@@ -81,6 +81,8 @@ func (s *Server) onConn(conn net.Conn) {
 		resp = s.onClient(rAddr, cmd)
 	} else if auth.isMix {
 		resp = s.onMix(rAddr, cmd, auth.peerIdentityKeyHash)
+	} else if auth.isReplica {
+		resp = s.onReplica(rAddr, cmd, auth.peerIdentityKeyHash)
 	} else {
 		panic("wtf") // should only happen if there is a bug in wireAuthenticator
 	}
@@ -122,6 +124,19 @@ func (s *Server) onMix(rAddr net.Addr, cmd commands.Command, peerIdentityKeyHash
 	return resp
 }
 
+func (s *Server) onReplica(rAddr net.Addr, cmd commands.Command, peerIdentityKeyHash []byte) commands.Command {
+	s.log.Debug("onReplica")
+	var resp commands.Command
+	switch c := cmd.(type) {
+	case *commands.PostReplicaDescriptor:
+		resp = s.onPostReplicaDescriptor(rAddr, c, peerIdentityKeyHash)
+	default:
+		s.log.Debugf("Peer %v: Invalid request: %T", rAddr, c)
+		return nil
+	}
+	return resp
+}
+
 func (s *Server) onGetConsensus(rAddr net.Addr, cmd *commands.GetConsensus) commands.Command {
 	s.log.Debugf("onGetConsensus: rAddr: %v, cmd: %+v", rAddr, cmd)
 	resp := &commands.Consensus{}
@@ -138,6 +153,81 @@ func (s *Server) onGetConsensus(rAddr net.Addr, cmd *commands.GetConsensus) comm
 		resp.ErrorCode = commands.ConsensusOk
 		resp.Payload = doc
 	}
+	return resp
+}
+
+func (s *Server) onPostReplicaDescriptor(rAddr net.Addr, cmd *commands.PostReplicaDescriptor, pubKeyHash []byte) commands.Command {
+	resp := &commands.PostReplicaDescriptorStatus{
+		ErrorCode: commands.DescriptorInvalid,
+	}
+
+	// Ensure the epoch is somewhat sane.
+	now, _, _ := epochtime.Now()
+	switch cmd.Epoch {
+	case now - 1, now, now + 1:
+		// Nodes will always publish the descriptor for the current epoch on
+		// launch, which may be off by one period, depending on how skewed
+		// the node's clock is and the current time.
+	default:
+		// The peer is publishing for an epoch that's invalid.
+		s.log.Errorf("Peer %v: Invalid descriptor epoch '%v'", rAddr, cmd.Epoch)
+		return resp
+	}
+
+	// Validate and deserialize the SignedReplicaUpload.
+	signedUpload := new(pki.SignedReplicaUpload)
+	err := signedUpload.Unmarshal(cmd.Payload)
+	if err != nil {
+		s.log.Errorf("Peer %v: Invalid descriptor: %v", rAddr, err)
+		return resp
+	}
+
+	desc := signedUpload.ReplicaDescriptor
+
+	// Ensure that the descriptor is signed by the peer that is posting.
+	identityKeyHash := hash.Sum256(desc.IdentityKey)
+	if !hmac.Equal(identityKeyHash[:], pubKeyHash) {
+		s.log.Errorf("Peer %v: Identity key hash '%x' is not link key '%v'.", rAddr, hash.Sum256(desc.IdentityKey), pubKeyHash)
+		resp.ErrorCode = commands.DescriptorForbidden
+		return resp
+	}
+	pkiSignatureScheme := signSchemes.ByName(s.cfg.Server.PKISignatureScheme)
+
+	descIdPubKey, err := pkiSignatureScheme.UnmarshalBinaryPublicKey(desc.IdentityKey)
+	if err != nil {
+		s.log.Error("failed to unmarshal descriptor IdentityKey")
+		resp.ErrorCode = commands.DescriptorForbidden
+		return resp
+	}
+
+	if !signedUpload.Verify(descIdPubKey) {
+		s.log.Error("PostDescriptorStatus contained a SignedUpload with an invalid signature")
+		resp.ErrorCode = commands.DescriptorForbidden
+		return resp
+	}
+
+	// Ensure that the descriptor is from an allowed peer.
+	if !s.state.isReplicaDescriptorAuthorized(desc) {
+		s.log.Errorf("Peer %v: Identity key hash '%x' not authorized", rAddr, hash.Sum256(desc.IdentityKey))
+		resp.ErrorCode = commands.DescriptorForbidden
+		return resp
+	}
+
+	// Hand the replica descriptor off to the state worker.  As long as this returns
+	// a nil, the authority "accepts" the replica descriptor.
+	err = s.state.onReplicaDescriptorUpload(cmd.Payload, desc, cmd.Epoch)
+	if err != nil {
+		// This is either a internal server error or the peer is trying to
+		// retroactively modify their descriptor.  This should disambituate
+		// the condition, but the latter is more likely.
+		s.log.Errorf("Peer %v: Rejected probably a conflict: %v", rAddr, err)
+		resp.ErrorCode = commands.DescriptorConflict
+		return resp
+	}
+
+	// Return a successful response.
+	s.log.Debugf("Peer %v: Accepted replica descriptor for epoch %v", rAddr, cmd.Epoch)
+	resp.ErrorCode = commands.DescriptorOk
 	return resp
 }
 
@@ -201,10 +291,13 @@ func (s *Server) onPostDescriptor(rAddr net.Addr, cmd *commands.PostDescriptor, 
 
 	// TODO: Use the packet loss statistics to make decisions about how to generate the consensus document.
 
-	// Hand the descriptor off to the state.  As long as this returns
+	// Hand the descriptor off to the state worker.  As long as this returns
 	// a nil, the authority "accepts" the descriptor.
 	err = s.state.onDescriptorUpload(cmd.Payload, desc, cmd.Epoch)
 	if err != nil {
+		// This is either a internal server error or the peer is trying to
+		// retroactively modify their descriptor.  This should disambituate
+		// the condition, but the latter is more likely.
 		s.log.Errorf("Peer %v: Rejected descriptor for epoch %v: %v", rAddr, cmd.Epoch, err)
 		resp.ErrorCode = commands.DescriptorConflict
 		return resp
@@ -222,6 +315,7 @@ type wireAuthenticator struct {
 	peerIdentityKeyHash []byte
 	isClient            bool
 	isMix               bool
+	isReplica           bool
 }
 
 func (a *wireAuthenticator) IsPeerValid(creds *wire.PeerCredentials) bool {
@@ -249,6 +343,5 @@ func (a *wireAuthenticator) IsPeerValid(creds *wire.PeerCredentials) bool {
 		a.s.log.Warning("Rejecting authority authentication, public key mismatch.")
 		return false
 	}
-
-	return false // Not reached.
+	// not reached
 }
