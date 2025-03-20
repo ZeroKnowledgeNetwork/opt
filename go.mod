@@ -1,6 +1,6 @@
 module github.com/0KnowledgeNetwork/opt
 
-go 1.22.3
+go 1.23.0
 
 require (
 	github.com/0KnowledgeNetwork/appchain-agent/clients/go v0.0.0-20250108045135-72cb54760c56
@@ -10,7 +10,7 @@ require (
 	github.com/fxamacker/cbor/v2 v2.7.0
 	github.com/katzenpost/hpqc v0.0.45
 	github.com/katzenpost/katzenpost v0.0.43
-	github.com/quic-go/quic-go v0.47.0
+	github.com/quic-go/quic-go v0.50.0
 	gopkg.in/op/go-logging.v1 v1.0.0-20160211212156-b2cb9fa56473
 	gopkg.in/yaml.v3 v3.0.1
 )
@@ -49,13 +49,13 @@ require (
 	gitlab.com/yawning/bsaes.git v0.0.0-20190805113838-0a714cd429ec // indirect
 	gitlab.com/yawning/x448.git v0.0.0-20221003101044-617eb9b7d9b7 // indirect
 	go.etcd.io/bbolt v1.3.10 // indirect
-	go.uber.org/mock v0.4.0 // indirect
-	golang.org/x/crypto v0.27.0 // indirect
+	go.uber.org/mock v0.5.0 // indirect
+	golang.org/x/crypto v0.36.0 // indirect
 	golang.org/x/exp v0.0.0-20240904232852-e7e105dedf7e // indirect
 	golang.org/x/mod v0.21.0 // indirect
-	golang.org/x/net v0.29.0 // indirect
-	golang.org/x/sync v0.8.0 // indirect
-	golang.org/x/sys v0.25.0 // indirect
-	golang.org/x/text v0.18.0 // indirect
+	golang.org/x/net v0.37.0 // indirect
+	golang.org/x/sync v0.12.0 // indirect
+	golang.org/x/sys v0.31.0 // indirect
+	golang.org/x/text v0.23.0 // indirect
 	golang.org/x/tools v0.24.0 // indirect
 )
