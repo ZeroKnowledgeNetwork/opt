@@ -24,8 +24,8 @@ import (
 	"github.com/katzenpost/katzenpost/core/sphinx/constants"
 	"github.com/katzenpost/katzenpost/core/worker"
 
-	"github.com/0KnowledgeNetwork/appchain-agent/clients/go/chainbridge"
-	"github.com/0KnowledgeNetwork/opt/pki/config"
+	"github.com/ZeroKnowledgeNetwork/appchain-agent/clients/go/chainbridge"
+	"github.com/ZeroKnowledgeNetwork/opt/pki/config"
 )
 
 const (

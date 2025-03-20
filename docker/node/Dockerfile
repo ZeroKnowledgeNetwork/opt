@@ -41,7 +41,7 @@ COPY . /src
 # Build Katzenpost components
 RUN --mount=type=cache,target="${GOCACHE}" \
   mkdir /dest \
-  # clone 0KN opt-specific katzenpost branch, if one does not exist
+  # clone opt-specific katzenpost branch, if one does not exist
   && if [ ! -d "${KATZENPOST_DIR}" ]; then make katzenpost_dir=${KATZENPOST_DIR} -C /src/docker clone-katzenpost ; fi \
   # a function to build and move the binary
   && build() { cd ${KATZENPOST_DIR}/$1 ; b=$(basename $1) ; go build ${GO_BUILD_OPTS} ; chmod u+x $b ; mv $b /dest/$2; } \
@@ -58,7 +58,7 @@ RUN --mount=type=cache,target="${GOCACHE}" \
   && build panda/server/cmd/panda_server panda_server \
   && build server_plugins/cbor_plugins/echo-go echo_server
 
-# Build 0KN mix network components
+# Build ZKN mix network components
 RUN --mount=type=cache,target="${GOCACHE}" \
   # a function to build and move the binary
   build() { cd /src/$1 ; b=$(basename $1) ; go build ${GO_BUILD_OPTS} ; chmod u+x $b ; mv $b /dest/$2; } \

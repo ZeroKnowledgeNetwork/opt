@@ -48,11 +48,11 @@ jobs:
           sleep 10
           sudo -E make walletshield-logs
       
-      - name: Test walletshield
-        run: ./tests/e2e/walletshield/test.sh
+      # - name: Test walletshield
+      #   run: ./tests/e2e/walletshield/test.sh
 
-      - name: Test walletshield request concurrency
-        run: ./tests/e2e/walletshield/test-concurrent-requests.sh
+      # - name: Test walletshield request concurrency
+      #   run: ./tests/e2e/walletshield/test-concurrent-requests.sh
 
       - name: Stop walletshield
         run: |

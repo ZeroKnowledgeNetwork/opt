@@ -1,7 +1,7 @@
 # Dockerized Test Networks
 
 This directory provides Makefiles and scripts to set up a local, offline test network for developing
-and testing 0KN mix network applications and server-side plugins. The setup leverages a
+and testing ZKN mix network applications and server-side plugins. The setup leverages a
 Podman-compatible `docker-compose` configuration for simulating a Katzenpost network environment.
 
 The goal is to support core development workflows by enabling local testing of both client and
@@ -10,14 +10,14 @@ server mix network components in isolated, controlled conditions.
 There are two Makefiles available, each corresponding to a different PKI.
 
 - **`Makefile`:** (Default) Manages a local test network using Katzenpost’s voting PKI.
-- **`Makefile.appchain`:** Uses 0KN’s ZKAppChain PKI.
+- **`Makefile.appchain`:** Uses ZKN’s ZKAppChain PKI.
 
 ## Voting PKI
 
-This setup, managed by the default `Makefile`, covers 0KN-specifics and proxies other targets to
+This setup, managed by the default `Makefile`, covers ZKN-specifics and proxies other targets to
 Katzenpost's `docker/Makefile`. For additional details, refer to the [Katzenpost Docker Test
 Network documentation](https://github.com/katzenpost/katzenpost/tree/main/docker). The voting PKI
-functionality offers less complex local testing of 0KN mix plugins and client apps that do not
+functionality offers less complex local testing of ZKN mix plugins and client apps that do not
 require the appchain.
 
 ## Appchain PKI
@@ -32,8 +32,8 @@ appchain-agent, utilizing UNIX domain sockets for communication.
 
 To run the Appchain PKI network, ensure the following components are available:
 
-- [appchain-agent](https://github.com/0KnowledgeNetwork/appchain-agent) Docker image
-- An operational 0KN ZKAppChain
+- [appchain-agent](https://github.com/ZeroKnowledgeNetwork/appchain-agent) Docker image
+- An operational ZKN ZKAppChain
 
 ### Example Workflow
 

@@ -10,7 +10,7 @@ import (
 
 	"github.com/carlmjohnson/versioninfo"
 
-	"github.com/0KnowledgeNetwork/opt/pki/config"
+	"github.com/ZeroKnowledgeNetwork/opt/pki/config"
 	"github.com/katzenpost/katzenpost/core/compat"
 )
 

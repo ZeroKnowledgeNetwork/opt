@@ -36,7 +36,7 @@ import (
 	"github.com/katzenpost/katzenpost/core/sphinx/geo"
 	sConfig "github.com/katzenpost/katzenpost/server/config"
 
-	zknConfig "github.com/0KnowledgeNetwork/opt/genconfig/config"
+	zknConfig "github.com/ZeroKnowledgeNetwork/opt/genconfig/config"
 )
 
 const (
@@ -370,7 +370,7 @@ func (s *katzenpost) genNodeConfig(identifier string, isGateway bool, isServiceN
 				s.hasProxy = true
 			}
 
-			// 0KN JSON RPC - HTTP Proxy
+			// ZKN JSON RPC - HTTP Proxy
 			httpProxyCfg := &sConfig.CBORPluginKaetzchen{
 				Capability:     "http_proxy",
 				Endpoint:       "http_proxy",

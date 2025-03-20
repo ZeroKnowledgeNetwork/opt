@@ -1,4 +1,4 @@
-name: Build 0KN Node Docker Image
+name: Build Node Docker Image
 
 on:
   pull_request:
