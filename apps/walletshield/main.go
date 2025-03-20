@@ -26,7 +26,7 @@ import (
 	"github.com/katzenpost/katzenpost/client2/thin"
 	sConstants "github.com/katzenpost/katzenpost/core/sphinx/constants"
 
-	"github.com/0KnowledgeNetwork/opt/server_plugins/cbor_plugins/http_proxy"
+	"github.com/ZeroKnowledgeNetwork/opt/server_plugins/cbor_plugins/http_proxy"
 )
 
 var (

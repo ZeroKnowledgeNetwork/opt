@@ -1,10 +1,10 @@
-module github.com/0KnowledgeNetwork/opt
+module github.com/ZeroKnowledgeNetwork/opt
 
 go 1.23.0
 
 require (
-	github.com/0KnowledgeNetwork/appchain-agent/clients/go v0.0.0-20250108045135-72cb54760c56
 	github.com/BurntSushi/toml v1.4.0
+	github.com/ZeroKnowledgeNetwork/appchain-agent/clients/go v0.0.0-20250320061231-774b32400141
 	github.com/carlmjohnson/versioninfo v0.22.5
 	github.com/charmbracelet/log v0.4.0
 	github.com/fxamacker/cbor/v2 v2.7.0

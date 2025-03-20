@@ -3,7 +3,7 @@ package main
 import (
 	"log"
 
-	"github.com/0KnowledgeNetwork/opt/genconfig"
+	"github.com/ZeroKnowledgeNetwork/opt/genconfig"
 )
 
 func main() {

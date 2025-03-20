@@ -29,7 +29,7 @@ import (
 	"github.com/katzenpost/katzenpost/core/utils"
 	"github.com/katzenpost/katzenpost/http/common"
 
-	"github.com/0KnowledgeNetwork/opt/pki/config"
+	"github.com/ZeroKnowledgeNetwork/opt/pki/config"
 )
 
 // ErrGenerateOnly is the error returned when the server initialization
