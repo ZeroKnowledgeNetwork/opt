@@ -22,7 +22,7 @@ kp_config_kem: ''
 kp_config_log_level: DEBUG
 kp_config_nike: x25519
 kp_config_ratchetNike: CTIDH512-X25519
-kp_config_pkiSignatureScheme: Ed25519
+kp_config_pkiSignatureScheme: ed25519
 kp_config_wirekem: xwing
 kp_debug_ConnectTimeout: 60000
 kp_debug_DecoySlack: 15000
