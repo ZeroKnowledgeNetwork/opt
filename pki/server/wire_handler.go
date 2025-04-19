@@ -1,6 +1,6 @@
 // related: katzenpost:authority/voting/server/wire_handler.go
 
-package main
+package server
 
 import (
 	"crypto/hmac"

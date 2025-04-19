@@ -1,4 +1,4 @@
-// related: katzenpost:/authority/cmd/voting/main.go
+// related: katzenpost:/authority/cmd/dirauth/main.go
 package main
 
 import (
@@ -10,7 +10,8 @@ import (
 
 	"github.com/carlmjohnson/versioninfo"
 
-	"github.com/ZeroKnowledgeNetwork/opt/pki/config"
+	"github.com/ZeroKnowledgeNetwork/opt/pki/server"
+	"github.com/ZeroKnowledgeNetwork/opt/pki/server/config"
 	"github.com/katzenpost/katzenpost/core/compat"
 )
 
@@ -43,9 +44,9 @@ func main() {
 	signal.Notify(rotateCh, syscall.SIGHUP)
 
 	// Start up the authority.
-	svr, err := New(cfg)
+	svr, err := server.New(cfg)
 	if err != nil {
-		if err == ErrGenerateOnly {
+		if err == server.ErrGenerateOnly {
 			os.Exit(0)
 		}
 		fmt.Fprintf(os.Stderr, "Failed to spawn authority instance: %v\n", err)

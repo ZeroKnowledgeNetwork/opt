@@ -1,6 +1,6 @@
 // AppChain communication (chainbridge) functions
 
-package main
+package server
 
 import (
 	"fmt"
@@ -10,7 +10,7 @@ import (
 	"github.com/katzenpost/katzenpost/core/pki"
 
 	"github.com/ZeroKnowledgeNetwork/appchain-agent/clients/go/chainbridge"
-	"github.com/ZeroKnowledgeNetwork/opt/pki/config"
+	"github.com/ZeroKnowledgeNetwork/opt/pki/server/config"
 )
 
 func (s *state) chNodesGet(name string) (*chainbridge.Node, error) {

@@ -1,6 +1,6 @@
 // related katzenpost:authority/voting/server/state.go
 
-package main
+package server
 
 import (
 	"crypto/hmac"
@@ -25,7 +25,7 @@ import (
 	"github.com/katzenpost/katzenpost/core/worker"
 
 	"github.com/ZeroKnowledgeNetwork/appchain-agent/clients/go/chainbridge"
-	"github.com/ZeroKnowledgeNetwork/opt/pki/config"
+	"github.com/ZeroKnowledgeNetwork/opt/pki/server/config"
 )
 
 const (

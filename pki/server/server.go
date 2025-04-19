@@ -1,6 +1,6 @@
 // related: katzenpost:authority/voting/server/server.go
 
-package main
+package server
 
 import (
 	"crypto/sha256"
@@ -29,7 +29,7 @@ import (
 	"github.com/katzenpost/katzenpost/core/utils"
 	"github.com/katzenpost/katzenpost/http/common"
 
-	"github.com/ZeroKnowledgeNetwork/opt/pki/config"
+	"github.com/ZeroKnowledgeNetwork/opt/pki/server/config"
 )
 
 // ErrGenerateOnly is the error returned when the server initialization

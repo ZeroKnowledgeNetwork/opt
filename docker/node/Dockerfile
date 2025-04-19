@@ -63,7 +63,7 @@ RUN --mount=type=cache,target="${GOCACHE}" \
   # a function to build and move the binary
   build() { cd /src/$1 ; b=$(basename $1) ; go build ${GO_BUILD_OPTS} ; chmod u+x $b ; mv $b /dest/$2; } \
   # pki
-  && build pki pki \
+  && build pki/cmd/pki pki \
   # genconfig
   && build genconfig/cmd/genconfig genconfig \
   # servicenode plugins

@@ -1,5 +1,5 @@
 apps/walletshield/walletshield
 docker/node/.env
 genconfig/cmd/genconfig/genconfig
-pki/pki
+pki/cmd/pki/pki
 server_plugins/cbor_plugins/http_proxy/cmd/http_proxy/http_proxy
