@@ -1,4 +1,6 @@
-// related: katzenpost:authority/voting/server/server.go
+// upstream: katzenpost:authority/voting/server/server.go
+// server.go - Katzenpost voting authority server.
+// with modifications for ZKN ZK-PKI
 
 package server
 
@@ -24,12 +26,11 @@ import (
 	signpem "github.com/katzenpost/hpqc/sign/pem"
 	signSchemes "github.com/katzenpost/hpqc/sign/schemes"
 
+	"github.com/katzenpost/katzenpost/authority/voting/server/config"
 	"github.com/katzenpost/katzenpost/core/log"
 	"github.com/katzenpost/katzenpost/core/sphinx/geo"
 	"github.com/katzenpost/katzenpost/core/utils"
 	"github.com/katzenpost/katzenpost/http/common"
-
-	"github.com/ZeroKnowledgeNetwork/opt/pki/server/config"
 )
 
 // ErrGenerateOnly is the error returned when the server initialization
@@ -56,15 +57,6 @@ type Server struct {
 	fatalErrCh chan error
 	haltedCh   chan interface{}
 	haltOnce   sync.Once
-}
-
-// used for dynamic topology derived from appchain, and not from config file
-func computeLambdaGFromNodesPerLayer(cfg *config.Config, npl int) float64 {
-	n := float64(npl)
-	if n == 1 {
-		return cfg.Parameters.LambdaP + cfg.Parameters.LambdaL + cfg.Parameters.LambdaD
-	}
-	return n * math.Log(n)
 }
 
 func computeLambdaG(cfg *config.Config) float64 {
@@ -276,6 +268,19 @@ func New(cfg *config.Config) (*Server, error) {
 		if err != nil {
 			return nil, err
 		}
+
+		/* NOTE(david): enable this check after we get things working again?
+		linkpubkey, err := kempem.FromPublicPEMFile(linkPublicKeyFile, scheme)
+		if err != nil {
+			return nil, err
+		}
+		s.log.Warning("attempting to call validate our config's peers against our own link public key")
+		err = cfg.ValidateAuthorities(linkpubkey)
+		if err != nil {
+			s.log.Error("config's peers validation failure. must be your own peer!")
+			return nil, err
+		}
+		*/
 	} else if utils.BothNotExists(linkPrivateKeyFile, linkPublicKeyFile) {
 		linkPublicKey, linkPrivateKey, err := scheme.GenerateKeyPair()
 		if err != nil {
@@ -305,6 +310,18 @@ func New(cfg *config.Config) (*Server, error) {
 
 	if s.cfg.Debug.GenerateOnly {
 		return nil, ErrGenerateOnly
+	}
+
+	// Ensure that there are enough mixes and providers whitelisted to form
+	// a topology, assuming all of them post a descriptor.
+	if len(cfg.GatewayNodes) < 1 {
+		return nil, fmt.Errorf("server: No GatewayNodes specified in the config")
+	}
+	if len(cfg.ServiceNodes) < 1 {
+		return nil, fmt.Errorf("server: No ServiceNodes specified in the config")
+	}
+	if len(cfg.Mixes) < cfg.Debug.Layers*cfg.Debug.MinNodesPerLayer {
+		return nil, fmt.Errorf("server: Insufficient nodes whitelisted, got %v , need %v", len(cfg.Mixes), cfg.Debug.Layers*cfg.Debug.MinNodesPerLayer)
 	}
 
 	// Past this point, failures need to call s.Shutdown() to do cleanup.

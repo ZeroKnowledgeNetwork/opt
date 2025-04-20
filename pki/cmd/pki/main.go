@@ -1,4 +1,7 @@
-// related: katzenpost:/authority/cmd/dirauth/main.go
+// upstream: katzenpost:/authority/cmd/dirauth/main.go
+// main.go - Katzenpost voting-authority binary.
+// with modifications for ZKN ZK-PKI
+
 package main
 
 import (
@@ -11,7 +14,7 @@ import (
 	"github.com/carlmjohnson/versioninfo"
 
 	"github.com/ZeroKnowledgeNetwork/opt/pki/server"
-	"github.com/ZeroKnowledgeNetwork/opt/pki/server/config"
+	"github.com/katzenpost/katzenpost/authority/voting/server/config"
 	"github.com/katzenpost/katzenpost/core/compat"
 )
 
