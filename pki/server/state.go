@@ -1,6 +1,6 @@
 // upstream katzenpost:authority/voting/server/state.go
 // state.go - Katzenpost voting authority server state.
-// with modifications for ZKN ZK-PKI
+// with modifications for ZK-PKI
 
 package server
 
@@ -21,6 +21,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/ZeroKnowledgeNetwork/appchain-agent/clients/go/chainbridge"
 	signSchemes "github.com/katzenpost/hpqc/sign/schemes"
 
 	bolt "go.etcd.io/bbolt"
@@ -120,6 +121,13 @@ type state struct {
 	threshold    int
 	dissenters   int
 	state        string
+
+	/****** ZK-PKI ******/
+	// locally registered node, only one allowed
+	// mix descriptor uploads to this authority are restricted to this node
+	authorizedNode *chainbridge.Node
+	chainBridge    *chainbridge.ChainBridge
+	/****** ZK-PKI ******/
 }
 
 func (s *state) Halt() {
@@ -151,6 +159,7 @@ func (s *state) worker() {
 	}
 }
 
+/****** ZK-PKI ****** Use custom state machine and epoch schedule
 func (s *state) fsm() <-chan time.Time {
 	s.Lock()
 	var sleep time.Duration
@@ -264,6 +273,7 @@ func (s *state) fsm() <-chan time.Time {
 	s.Unlock()
 	return time.After(sleep)
 }
+****** ZK-PKI ******/
 
 func (s *state) persistDocument(epoch uint64, doc []byte) {
 	if err := s.db.Update(func(tx *bolt.Tx) error {
@@ -287,6 +297,11 @@ func (s *state) getVote(epoch uint64) (*pki.Document, error) {
 		s.log.Debugf("Setting genesisEpoch %d from votingEpoch", s.votingEpoch)
 		s.genesisEpoch = s.votingEpoch
 	}
+
+	/****** ZK-PKI ******/
+	vote_, err := s.zkpki_getVote(epoch)
+	return vote_, err
+	/****** ZK-PKI ******/
 
 	descriptors := []*pki.MixDescriptor{}
 	for _, desc := range s.descriptors[epoch] {
@@ -529,8 +544,14 @@ func (s *state) getDocument(descriptors []*pki.MixDescriptor, replicaDescriptors
 		}
 	}
 
+	/****** ZK-PKI ****** Compute lambdaG from nodes per layer, not config-file topology
 	lambdaG := computeLambdaG(s.s.cfg)
 	s.log.Debugf("computed lambdaG is %f", lambdaG)
+	****** ZK-PKI ******/
+	nodesPerLayer := len(nodes) / s.s.cfg.Debug.Layers
+	lambdaG := zkpki_computeLambdaGFromNodesPerLayer(s.s.cfg, nodesPerLayer)
+	s.log.Debugf("computed lambdaG from %d nodes per layer is %f", nodesPerLayer, lambdaG)
+	/****** ZK-PKI ******/
 
 	// Build the Document.
 	doc := &pki.Document{
@@ -558,6 +579,11 @@ func (s *state) getDocument(descriptors []*pki.MixDescriptor, replicaDescriptors
 		SphinxGeometryHash: s.geo.Hash(),
 		PKISignatureScheme: s.s.cfg.Server.PKISignatureScheme,
 	}
+
+	/****** ZK-PKI ******/
+	doc.PriorSharedRandom = [][]byte{srv} // this is made up, to suffice IsDocumentWellFormed
+	/****** ZK-PKI ******/
+
 	return doc
 }
 
@@ -1974,11 +2000,13 @@ func newState(s *Server) (*state, error) {
 
 	// set voting schedule at runtime
 
+	/****** ZK-PKI ****** Use custom epoch schedule
 	st.log.Debugf("State initialized with epoch Period: %s", epochtime.Period)
 	st.log.Debugf("State initialized with MixPublishDeadline: %s", MixPublishDeadline)
 	st.log.Debugf("State initialized with AuthorityVoteDeadline: %s", AuthorityVoteDeadline)
 	st.log.Debugf("State initialized with AuthorityRevealDeadline: %s", AuthorityRevealDeadline)
 	st.log.Debugf("State initialized with PublishConsensusDeadline: %s", PublishConsensusDeadline)
+	****** ZK-PKI ******/
 	st.verifiers = make(map[[publicKeyHashSize]byte]sign.PublicKey)
 	for _, auth := range s.cfg.Authorities {
 		st.verifiers[hash.Sum256From(auth.IdentityPublicKey)] = auth.IdentityPublicKey
@@ -2102,6 +2130,12 @@ func newState(s *Server) (*state, error) {
 	st.commits = make(map[uint64]map[[publicKeyHashSize]byte][]byte)
 	st.priorSRV = make([][]byte, 0)
 
+	/****** ZK-PKI ******/
+	if err := zkpki_newState(st); err != nil {
+		return nil, err
+	}
+	/****** ZK-PKI ******/
+
 	// Initialize the persistence store and restore state.
 	dbPath := filepath.Join(s.cfg.Server.DataDir, dbFile)
 	var err error
@@ -2122,6 +2156,11 @@ func (s *state) backgroundFetchConsensus(epoch uint64) {
 	if s.TryLock() {
 		panic("write lock not held in backgroundFetchConsensus(epoch)")
 	}
+
+	/****** ZK-PKI ******/
+	s.zkpki_backgroundFetchConsensus(epoch)
+	return
+	/****** ZK-PKI ******/
 
 	// If there isn't a consensus for the previous epoch, ask the other
 	// authorities for a consensus.

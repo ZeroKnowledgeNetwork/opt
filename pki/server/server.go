@@ -312,6 +312,7 @@ func New(cfg *config.Config) (*Server, error) {
 		return nil, ErrGenerateOnly
 	}
 
+	/****** ZK-PKI ****** Nodes do not depend on other nodes
 	// Ensure that there are enough mixes and providers whitelisted to form
 	// a topology, assuming all of them post a descriptor.
 	if len(cfg.GatewayNodes) < 1 {
@@ -323,6 +324,7 @@ func New(cfg *config.Config) (*Server, error) {
 	if len(cfg.Mixes) < cfg.Debug.Layers*cfg.Debug.MinNodesPerLayer {
 		return nil, fmt.Errorf("server: Insufficient nodes whitelisted, got %v , need %v", len(cfg.Mixes), cfg.Debug.Layers*cfg.Debug.MinNodesPerLayer)
 	}
+	****** ZK-PKI ******/
 
 	// Past this point, failures need to call s.Shutdown() to do cleanup.
 	isOk := false
