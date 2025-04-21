@@ -474,7 +474,9 @@ func (s *katzenpost) genAuthorizedNodes() ([]*vConfig.Node, []*vConfig.Node, []*
 	for _, nodeCfg := range s.nodeConfigs {
 		node := &vConfig.Node{
 			Identifier:           nodeCfg.Server.Identifier,
-			IdentityPublicKeyPem: filepath.Join(s.outDir, nodeCfg.Server.Identifier, "identity.public.pem"),
+			IdentityPublicKeyPem: filepath.Join("..", nodeCfg.Server.Identifier, "identity.public.pem"),
+			// Note: 20250421 KP config.Load does not support Abs path for this key, so use relative
+			// IdentityPublicKeyPem: filepath.Join(s.outDir, nodeCfg.Server.Identifier, "identity.public.pem"),
 		}
 		if nodeCfg.Server.IsGatewayNode {
 			gateways = append(gateways, node)
