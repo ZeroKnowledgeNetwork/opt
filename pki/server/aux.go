@@ -47,7 +47,7 @@ func (s *state) fsm() <-chan time.Time {
 	s.Lock()
 	var sleep time.Duration
 	epoch, elapsed, nextEpoch := epochtime.Now()
-	s.log.Debugf("Current epoch %d, remaining time: %s, state: %s", epoch, nextEpoch, s.state)
+	s.zlog.Debugf("Current epoch %d, remaining time: %s, state: %s", epoch, nextEpoch, s.state)
 
 	switch s.state {
 	case stateBootstrap:
@@ -56,7 +56,7 @@ func (s *state) fsm() <-chan time.Time {
 		s.backgroundFetchConsensus(epoch - 1)
 		s.backgroundFetchConsensus(epoch)
 		if elapsed > MixPublishDeadline {
-			s.log.Errorf("Too late to vote this round, sleeping until %s", nextEpoch)
+			s.zlog.Errorf("Too late to vote this round, sleeping until %s", nextEpoch)
 			sleep = nextEpoch
 			s.votingEpoch = epoch + 2
 			s.state = stateBootstrap
@@ -67,7 +67,7 @@ func (s *state) fsm() <-chan time.Time {
 			if sleep < 0 {
 				sleep = 0
 			}
-			s.log.Noticef("Bootstrapping for %d", s.votingEpoch)
+			s.zlog.Noticef("Bootstrapping for %d", s.votingEpoch)
 		}
 
 	case stateDescriptorSend:
@@ -77,7 +77,7 @@ func (s *state) fsm() <-chan time.Time {
 		if ok {
 			s.zkpki_submitDescriptor(desc, s.votingEpoch)
 		} else {
-			s.log.Errorf("❌ No descriptor for epoch %d", s.votingEpoch)
+			s.zlog.Errorf("❌ No descriptor for epoch %d", s.votingEpoch)
 		}
 		s.state = stateAcceptDescriptor
 		sleep = DescriptorBlockDeadline - elapsed + s.zkpki_jitter()
@@ -87,7 +87,7 @@ func (s *state) fsm() <-chan time.Time {
 		if err == nil {
 			s.zkpki_sendVote(doc, s.votingEpoch)
 		} else {
-			s.log.Errorf("❌ Failed to compute vote for epoch %v: %s", s.votingEpoch, err)
+			s.zlog.Errorf("❌ Failed to compute vote for epoch %v: %s", s.votingEpoch, err)
 		}
 		s.state = stateAcceptVote
 		_, nowelapsed, _ := epochtime.Now()
@@ -107,7 +107,7 @@ func (s *state) fsm() <-chan time.Time {
 			sleep = MixPublishDeadline + nextEpoch + s.zkpki_jitter()
 			s.votingEpoch++
 		} else {
-			s.log.Error("No document for epoch %v", epoch+1)
+			s.zlog.Error("No document for epoch %v", epoch+1)
 			s.state = stateBootstrap
 			s.votingEpoch = epoch + 2 // vote on epoch+2 in epoch+1
 			sleep = nextEpoch
@@ -117,7 +117,7 @@ func (s *state) fsm() <-chan time.Time {
 	}
 
 	s.pruneDocuments()
-	s.log.Debugf("authority: FSM in state %v until %s", s.state, sleep)
+	s.zlog.Debugf("authority: FSM in state %v until %s", s.state, sleep)
 	s.Unlock()
 	return time.After(sleep)
 }
@@ -142,17 +142,17 @@ func (s *state) zkpki_submitDescriptor(desc *pki.MixDescriptor, epoch uint64) {
 	// - reject redundant descriptors (even those that didn't change)
 	// - reject descriptors if document for the epoch exists
 	if err := s.chPKISetMixDescriptor(desc, epoch); err != nil {
-		s.log.Errorf("❌ submitDescriptorToAppchain: Failed to set mix descriptor for node %v, epoch=%v: %v", desc.Name, epoch, err)
+		s.zlog.Errorf("❌ submitDescriptor: Failed to set mix descriptor for node %v, epoch=%v: %v", desc.Name, epoch, err)
 	}
 	epochCurrent, _, _ := epochtime.Now()
-	s.log.Noticef("✅ submitDescriptorToAppchain: Submitted descriptor to appchain for node %v, epoch=%v (in epoch=%v)", desc.Name, epoch, epochCurrent)
+	s.zlog.Noticef("✅ submitDescriptor: Set mix descriptor for node %v, epoch=%v (in epoch=%v)", desc.Name, epoch, epochCurrent)
 }
 
 func (s *state) zkpki_sendVote(doc *pki.Document, epoch uint64) {
 	if err := s.chPKISetDocument(doc); err != nil {
-		s.log.Errorf("❌ sendVoteToAppchain: Error setting document for epoch %d: %v", epoch, err)
+		s.zlog.Errorf("❌ sendVote: Error setting document for epoch %d: %v", epoch, err)
 	} else {
-		s.log.Noticef("✅ sendVoteToAppchain: Set document for epoch %d", epoch)
+		s.zlog.Noticef("✅ sendVote: Set document for epoch %d", epoch)
 	}
 }
 
@@ -163,7 +163,7 @@ func (s *state) zkpki_backgroundFetchConsensus(epoch uint64) {
 		s.Go(func() {
 			doc, err := s.chPKIGetDocument(epoch)
 			if err != nil {
-				s.log.Debugf("pki: FetchConsensus: Failed to fetch document for epoch %v: %v", epoch, err)
+				s.zlog.Debugf("FetchConsensus: Failed to fetch document for epoch %v: %v", epoch, err)
 				return
 			}
 			s.Lock()
@@ -176,11 +176,11 @@ func (s *state) zkpki_backgroundFetchConsensus(epoch uint64) {
 				// sign the locally-stored document
 				_, err := s.doSignDocument(s.s.identityPrivateKey, s.s.identityPublicKey, doc)
 				if err != nil {
-					s.log.Errorf("pki: FetchConsensus: Error signing document for epoch %v: %v", epoch, err)
+					s.zlog.Errorf("FetchConsensus: Error signing document for epoch %v: %v", epoch, err)
 					return
 				}
 				s.documents[epoch] = doc
-				s.log.Debugf("pki: FetchConsensus: ✅ Set doc for epoch %v: %s", epoch, doc.String())
+				s.zlog.Debugf("FetchConsensus: ✅ Set local doc for epoch %v: %s", epoch, doc.String())
 			}
 		})
 	}
@@ -207,7 +207,7 @@ func (s *state) zkpki_getVote(epoch uint64) (*pki.Document, error) {
 	doc.Version = pki.DocumentVersion
 
 	if err := pki.IsDocumentWellFormed(doc, nil); err != nil {
-		s.log.Errorf("pki: ❌ getVote: IsDocumentWellFormed: %s", err)
+		s.zlog.Errorf("❌ getVote: IsDocumentWellFormed: %s", err)
 		return nil, err
 	}
 
@@ -215,17 +215,18 @@ func (s *state) zkpki_getVote(epoch uint64) (*pki.Document, error) {
 }
 
 func zkpki_newState(st *state) error {
+	st.zlog = st.s.logBackend.GetLogger("state/zkpki")
 
-	st.log.Debugf("[ZK-PKI] State initialized with epoch Period: %s", epochtime.Period)
-	st.log.Debugf("[ZK-PKI] State initialized with JitterMax: %s", JitterMax)
-	st.log.Debugf("[ZK-PKI] State initialized with MixPublishDeadline: %s", MixPublishDeadline)
-	st.log.Debugf("[ZK-PKI] State initialized with DescriptorBlockDeadline: %s", DescriptorBlockDeadline)
-	st.log.Debugf("[ZK-PKI] State initialized with AuthorityVoteDeadline: %s", AuthorityVoteDeadline)
-	st.log.Debugf("[ZK-PKI] State initialized with PublishConsensusDeadline: %s", PublishConsensusDeadline)
-	st.log.Debugf("[ZK-PKI] State initialized with DocGenerationDeadline: %s", DocGenerationDeadline)
+	st.zlog.Debugf("State initialized with epoch Period: %s", epochtime.Period)
+	st.zlog.Debugf("State initialized with JitterMax: %s", JitterMax)
+	st.zlog.Debugf("State initialized with MixPublishDeadline: %s", MixPublishDeadline)
+	st.zlog.Debugf("State initialized with DescriptorBlockDeadline: %s", DescriptorBlockDeadline)
+	st.zlog.Debugf("State initialized with AuthorityVoteDeadline: %s", AuthorityVoteDeadline)
+	st.zlog.Debugf("State initialized with PublishConsensusDeadline: %s", PublishConsensusDeadline)
+	st.zlog.Debugf("State initialized with DocGenerationDeadline: %s", DocGenerationDeadline)
 
 	// Init AppChain communications (chainbridge)
-	chlog := st.s.logBackend.GetLogger("state:chain")
+	chlog := st.s.logBackend.GetLogger("state/zkpki/chain")
 	st.chainBridge = chainbridge.NewChainBridge(filepath.Join(st.s.cfg.Server.DataDir, "appchain.sock"))
 	st.chainBridge.SetErrorHandler(func(err error) {
 		chlog.Errorf("Error: %v", err)
@@ -257,7 +258,7 @@ func zkpki_newState(st *state) error {
 	}
 	v, isGatewayNode, isServiceNode, _ /*isStorageReplica*/ := extractNodeFromCfg()
 	if v == nil {
-		st.log.Fatalf("❌ Error: Invalid configuration for a single local node")
+		st.zlog.Fatalf("❌ Error: Invalid configuration for a single local node")
 	}
 
 	// load the authorized node's identity public key
@@ -281,22 +282,22 @@ func zkpki_newState(st *state) error {
 	st.authorizedNode, err = st.chNodesGet(v.Identifier)
 	if err != nil {
 		if err := st.chNodesRegister(v, identityPublicKey, isGatewayNode, isServiceNode); err != nil {
-			st.log.Fatalf("❌ Error: node registration failed:", err)
+			st.zlog.Fatalf("❌ Error: node registration failed:", err)
 		}
 		time.Sleep(time.Duration(1) * time.Second)
 		st.authorizedNode, err = st.chNodesGet(v.Identifier)
 		if err != nil {
-			st.log.Fatalf("❌ Error: Failed to get node=%s from appchain: %v", v.Identifier, err)
+			st.zlog.Fatalf("❌ Error: Failed to get node=%s from appchain: %v", v.Identifier, err)
 		}
 	}
 
 	// Ensure node appchain registration matches the local node configuration
 	pk := hash.Sum256From(identityPublicKey)
 	if pk != hash.Sum256(st.authorizedNode.IdentityKey) {
-		st.log.Fatalf("❌ Error: IdentityKey mismatch between node registration and configuration")
+		st.zlog.Fatalf("❌ Error: IdentityKey mismatch between node registration and configuration")
 	}
 
-	st.log.Noticef("✅ Node registered with Identifier '%s', Identity key hash '%x'", v.Identifier, pk)
+	st.zlog.Noticef("✅ Node registered with Identifier '%s', Identity key hash '%x'", v.Identifier, pk)
 
 	return nil
 }

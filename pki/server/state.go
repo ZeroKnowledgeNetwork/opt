@@ -127,6 +127,7 @@ type state struct {
 	// mix descriptor uploads to this authority are restricted to this node
 	authorizedNode *chainbridge.Node
 	chainBridge    *chainbridge.ChainBridge
+	zlog           *logging.Logger
 	/****** ZK-PKI ******/
 }
 
