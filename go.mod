@@ -11,6 +11,8 @@ require (
 	github.com/katzenpost/hpqc v0.0.55
 	github.com/katzenpost/katzenpost v0.0.48
 	github.com/quic-go/quic-go v0.50.0
+	go.etcd.io/bbolt v1.3.10
+	golang.org/x/crypto v0.36.0
 	gopkg.in/op/go-logging.v1 v1.0.0-20160211212156-b2cb9fa56473
 	gopkg.in/yaml.v3 v3.0.1
 )
@@ -48,9 +50,7 @@ require (
 	gitlab.com/yawning/aez.git v0.0.0-20211027044916-e49e68abd344 // indirect
 	gitlab.com/yawning/bsaes.git v0.0.0-20190805113838-0a714cd429ec // indirect
 	gitlab.com/yawning/x448.git v0.0.0-20221003101044-617eb9b7d9b7 // indirect
-	go.etcd.io/bbolt v1.3.10 // indirect
 	go.uber.org/mock v0.5.0 // indirect
-	golang.org/x/crypto v0.36.0 // indirect
 	golang.org/x/exp v0.0.0-20240904232852-e7e105dedf7e // indirect
 	golang.org/x/mod v0.21.0 // indirect
 	golang.org/x/net v0.37.0 // indirect
