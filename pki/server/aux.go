@@ -49,6 +49,15 @@ func (s *state) fsm() <-chan time.Time {
 	epoch, elapsed, nextEpoch := epochtime.Now()
 	s.zlog.Debugf("Current epoch %d, remaining time: %s, state: %s", epoch, nextEpoch, s.state)
 
+	nextDeadline := func(window time.Duration) time.Duration {
+		_, nowelapsed, _ := epochtime.Now()
+		d := window - nowelapsed + s.zkpki_jitter()
+		if d < 0 {
+			return 0
+		}
+		return d
+	}
+
 	switch s.state {
 	case stateBootstrap:
 		// TODO: ensure network is ready and locally registered node is eligible for participation
@@ -63,10 +72,7 @@ func (s *state) fsm() <-chan time.Time {
 		} else {
 			s.votingEpoch = epoch + 1
 			s.state = stateDescriptorSend
-			sleep = MixPublishDeadline - elapsed + s.zkpki_jitter()
-			if sleep < 0 {
-				sleep = 0
-			}
+			sleep = nextDeadline(MixPublishDeadline)
 			s.zlog.Noticef("Bootstrapping for %d", s.votingEpoch)
 		}
 
@@ -80,7 +86,7 @@ func (s *state) fsm() <-chan time.Time {
 			s.zlog.Errorf("❌ No descriptor for epoch %d", s.votingEpoch)
 		}
 		s.state = stateAcceptDescriptor
-		sleep = DescriptorBlockDeadline - elapsed + s.zkpki_jitter()
+		sleep = nextDeadline(DescriptorBlockDeadline)
 
 	case stateAcceptDescriptor:
 		doc, err := s.getVote(s.votingEpoch)
@@ -90,14 +96,12 @@ func (s *state) fsm() <-chan time.Time {
 			s.zlog.Errorf("❌ Failed to compute vote for epoch %v: %s", s.votingEpoch, err)
 		}
 		s.state = stateAcceptVote
-		_, nowelapsed, _ := epochtime.Now()
-		sleep = AuthorityVoteDeadline - nowelapsed
+		sleep = nextDeadline(AuthorityVoteDeadline)
 
 	case stateAcceptVote:
 		s.backgroundFetchConsensus(s.votingEpoch)
 		s.state = stateConfirmConsensus
-		_, nowelapsed, _ := epochtime.Now()
-		sleep = PublishConsensusDeadline - nowelapsed
+		sleep = nextDeadline(PublishConsensusDeadline)
 
 	case stateConfirmConsensus:
 		// See if consensus doc was retrieved from the appchain
