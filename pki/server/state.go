@@ -52,12 +52,15 @@ const (
 	descriptorsBucket        = "descriptors"
 	replicaDescriptorsBucket = "replica_descriptors"
 	documentsBucket          = "documents"
+
+	/****** ZK-PKI ****** Use custom state machine and epoch schedule
 	stateAcceptDescriptor    = "accept_desc"
 	stateAcceptVote          = "accept_vote"
 	stateAcceptReveal        = "accept_reveal"
 	stateAcceptCert          = "accept_cert"
 	stateAcceptSignature     = "accept_signature"
 	stateBootstrap           = "bootstrap"
+	****** ZK-PKI ******/
 
 	publicKeyHashSize = 32
 )
