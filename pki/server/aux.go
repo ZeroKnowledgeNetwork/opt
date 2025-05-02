@@ -22,9 +22,9 @@ import (
 const (
 	stateBootstrap        = "bootstrap"         // register node, fetch consensus for previous epoch
 	stateSubmitDescriptor = "submit_descriptor" // submit mix descriptor to appchain (wait for block inclusion)
-	stateSubmitVote       = "submit_vote"       // retrieve descriptors from appchain, submit pki doc as "vote" (TODO: hidden)
-	stateRevealVote       = "reveal_vote"       // TODO submit vote reveal to appchain
-	stateAcceptVote       = "accept_vote"       // retrieve pki doc from appchain (TODO: with highest votes)
+	stateCommitVote       = "commit_vote"       // retrieve descriptors from appchain, commit pki doc as hidden "vote" to appchain
+	stateRevealVote       = "reveal_vote"       // reveal vote to appchain, establish threshold consensus
+	stateAcceptVote       = "accept_vote"       // retrieve pki doc from appchain, with highest vote count
 	stateConfirmConsensus = "confirm_consensus" // confirm doc reception
 )
 
@@ -86,18 +86,28 @@ func (s *state) fsm() <-chan time.Time {
 		} else {
 			s.zlog.Errorf("❌ No descriptor for epoch %d", s.votingEpoch)
 		}
-		s.state = stateSubmitVote
+		s.state = stateCommitVote
 		sleep = nextDeadline(DeadlineDescriptorProcessed)
 
-	case stateSubmitVote:
+	case stateCommitVote:
 		doc, err := s.getVote(s.votingEpoch)
 		if err == nil {
-			s.zkpki_sendVote(doc, s.votingEpoch)
+			s.zkpki_commitVote(doc, s.votingEpoch)
+		} else {
+			s.zlog.Errorf("❌ Failed to compute vote for epoch %v: %s", s.votingEpoch, err)
+		}
+		s.state = stateRevealVote
+		sleep = nextDeadline(DeadlineAuthorityVote)
+
+	case stateRevealVote:
+		doc, err := s.getVote(s.votingEpoch)
+		if err == nil {
+			s.zkpki_revealVote(doc, s.votingEpoch)
 		} else {
 			s.zlog.Errorf("❌ Failed to compute vote for epoch %v: %s", s.votingEpoch, err)
 		}
 		s.state = stateAcceptVote
-		sleep = nextDeadline(DeadlineAuthorityVote)
+		sleep = nextDeadline(DeadlineAuthorityReveal)
 
 	case stateAcceptVote:
 		s.backgroundFetchConsensus(s.votingEpoch)
@@ -161,12 +171,28 @@ func (s *state) zkpki_sendVote(doc *pki.Document, epoch uint64) {
 	}
 }
 
+func (s *state) zkpki_commitVote(doc *pki.Document, epoch uint64) {
+	if err := s.chConsensusCommitVote(doc); err != nil {
+		s.zlog.Errorf("❌ commitVote: epoch %d: %v", epoch, err)
+	} else {
+		s.zlog.Noticef("✅ commitVote: epoch %d", epoch)
+	}
+}
+
+func (s *state) zkpki_revealVote(doc *pki.Document, epoch uint64) {
+	if err := s.chConsensusRevealVote(doc); err != nil {
+		s.zlog.Errorf("❌ revealVote: epoch %d: %v", epoch, err)
+	} else {
+		s.zlog.Noticef("✅ revealVote: epoch %d", epoch)
+	}
+}
+
 func (s *state) zkpki_backgroundFetchConsensus(epoch uint64) {
 	// If there isn't a consensus for the previous epoch, ask the appchain for a consensus.
 	_, ok := s.documents[epoch]
 	if !ok {
 		s.Go(func() {
-			doc, err := s.chPKIGetDocument(epoch)
+			doc, err := s.chConsensusGetConsensus(epoch)
 			if err != nil {
 				s.zlog.Debugf("FetchConsensus: Failed to fetch document for epoch %v: %v", epoch, err)
 				return
@@ -303,6 +329,11 @@ func zkpki_newState(st *state) error {
 	}
 
 	st.zlog.Noticef("✅ Node registered with Identifier '%s', Identity key hash '%x'", v.Identifier, pk)
+
+	// Register node as voter of pki consensus
+	if err = st.chConsensusRegister(); err != nil {
+		st.zlog.Fatalf("❌ Error: consensus registration failed:", err)
+	}
 
 	return nil
 }

@@ -12,6 +12,78 @@ import (
 	"github.com/katzenpost/katzenpost/core/pki"
 )
 
+func (s *state) chConsensusRegister() error {
+	chCommand := fmt.Sprintf(chainbridge.Cmd_consensus_register)
+	chResponse, err := s.chainBridge.Command(chCommand, nil)
+	if err != nil {
+		return fmt.Errorf("ChainBridge command error: %v", err)
+	}
+	if chResponse.Error != "" {
+		return fmt.Errorf("ChainBridge response error: %v", chResponse.Error)
+	}
+	return nil
+}
+
+// Commit a hash of the PKI doc as a consensus vote
+func (s *state) chConsensusCommitVote(doc *pki.Document) error {
+	return s._chConsensusVote(doc, chainbridge.Cmd_consensus_commitVote)
+}
+
+// Reveal previously committed vote
+func (s *state) chConsensusRevealVote(doc *pki.Document) error {
+	return s._chConsensusVote(doc, chainbridge.Cmd_consensus_revealVote)
+}
+
+// An abstract helper function for consensus commit and reveal votes.
+func (s *state) _chConsensusVote(doc *pki.Document, cmdTemplate string) error {
+	// 1) Marshal the document
+	ccbor, err := cbor.CanonicalEncOptions().EncMode()
+	if err != nil {
+		panic(err)
+	}
+	payload, err := ccbor.Marshal((*pki.Document)(doc))
+	if err != nil {
+		return fmt.Errorf("failed to marshal PKI document: %w", err)
+	}
+
+	// 2) Build and send the command
+	network := 1000 // TODO: pull from state or config
+	salt := 200     // TODO: pull fresh from state per epoch
+
+	cmd := fmt.Sprintf(cmdTemplate, network, doc.Epoch, salt)
+	resp, err := s.chainBridge.Command(cmd, payload)
+	s.zlog.Debugf("ChainBridge response (%s): %+v", cmd, resp)
+	if err != nil {
+		return fmt.Errorf("chainBridge command error: %w", err)
+	}
+	if resp.Error != "" {
+		return fmt.Errorf("chainBridge response error: %s", resp.Error)
+	}
+	return nil
+}
+
+func (s *state) chConsensusGetConsensus(epoch uint64) (*pki.Document, error) {
+	network := 1000 // TODO: pull from state or config
+
+	chCommand := fmt.Sprintf(chainbridge.Cmd_consensus_getConsensus, network, epoch)
+	chResponse, err := s.chainBridge.Command(chCommand, nil)
+	if err != nil {
+		return nil, fmt.Errorf("ChainBridge command error: %v", err)
+	}
+
+	chDoc, err := s.chainBridge.GetDataBytes(chResponse)
+	if err != nil {
+		return nil, err
+	}
+
+	var doc pki.Document
+	if err = cbor.Unmarshal(chDoc, (*pki.Document)(&doc)); err != nil {
+		return nil, fmt.Errorf("Failed to unmarshal PKI document: %v", err)
+	}
+
+	return &doc, nil
+}
+
 func (s *state) chNodesGet(name string) (*chainbridge.Node, error) {
 	chCommand := fmt.Sprintf(chainbridge.Cmd_nodes_getNode, name)
 	chResponse, err := s.chainBridge.Command(chCommand, nil)
@@ -95,12 +167,9 @@ func (s *state) chPKISetDocument(doc *pki.Document) error {
 	// X: payload, err := doc.MarshalCertificate()
 	payload, err := ccbor.Marshal((*pki.Document)(doc))
 	if err != nil {
-		return err
-	}
-
-	if err != nil {
 		return fmt.Errorf("Failed to marshal PKI document: %v", err)
 	}
+
 	chCommand := fmt.Sprintf(chainbridge.Cmd_pki_setDocument, doc.Epoch)
 	chResponse, err := s.chainBridge.Command(chCommand, payload)
 	s.zlog.Debugf("ChainBridge response (%s): %+v", chCommand, chResponse)
