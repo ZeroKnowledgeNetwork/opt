@@ -25,31 +25,24 @@ func (s *state) chConsensusRegister() error {
 }
 
 // Commit a hash of the PKI doc as a consensus vote
-func (s *state) chConsensusCommitVote(doc *pki.Document) error {
-	return s._chConsensusVote(doc, chainbridge.Cmd_consensus_commitVote)
+func (s *state) chConsensusCommitVote(network uint64, salt uint64, doc *pki.Document) error {
+	return s._chConsensusVote(network, salt, doc, chainbridge.Cmd_consensus_commitVote)
 }
 
 // Reveal previously committed vote
-func (s *state) chConsensusRevealVote(doc *pki.Document) error {
-	return s._chConsensusVote(doc, chainbridge.Cmd_consensus_revealVote)
+func (s *state) chConsensusRevealVote(network uint64, salt uint64, doc *pki.Document) error {
+	return s._chConsensusVote(network, salt, doc, chainbridge.Cmd_consensus_revealVote)
 }
 
 // An abstract helper function for consensus commit and reveal votes.
-func (s *state) _chConsensusVote(doc *pki.Document, cmdTemplate string) error {
+func (s *state) _chConsensusVote(network uint64, salt uint64, doc *pki.Document, cmdTemplate string) error {
 	// 1) Marshal the document
-	ccbor, err := cbor.CanonicalEncOptions().EncMode()
-	if err != nil {
-		panic(err)
-	}
-	payload, err := ccbor.Marshal((*pki.Document)(doc))
+	payload, err := s.zkpki_ccbor.Marshal((*pki.Document)(doc))
 	if err != nil {
 		return fmt.Errorf("failed to marshal PKI document: %w", err)
 	}
 
 	// 2) Build and send the command
-	network := 1000 // TODO: pull from state or config
-	salt := 200     // TODO: pull fresh from state per epoch
-
 	cmd := fmt.Sprintf(cmdTemplate, network, doc.Epoch, salt)
 	resp, err := s.chainBridge.Command(cmd, payload)
 	s.zlog.Debugf("ChainBridge response (%s): %+v", cmd, resp)
@@ -62,9 +55,7 @@ func (s *state) _chConsensusVote(doc *pki.Document, cmdTemplate string) error {
 	return nil
 }
 
-func (s *state) chConsensusGetConsensus(epoch uint64) (*pki.Document, error) {
-	network := 1000 // TODO: pull from state or config
-
+func (s *state) chConsensusGetConsensus(network uint64, epoch uint64) (*pki.Document, error) {
 	chCommand := fmt.Sprintf(chainbridge.Cmd_consensus_getConsensus, network, epoch)
 	chResponse, err := s.chainBridge.Command(chCommand, nil)
 	if err != nil {

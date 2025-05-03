@@ -22,6 +22,7 @@ import (
 	"time"
 
 	"github.com/ZeroKnowledgeNetwork/appchain-agent/clients/go/chainbridge"
+	"github.com/fxamacker/cbor/v2"
 	signSchemes "github.com/katzenpost/hpqc/sign/schemes"
 
 	bolt "go.etcd.io/bbolt"
@@ -131,6 +132,10 @@ type state struct {
 	authorizedNode *chainbridge.Node
 	chainBridge    *chainbridge.ChainBridge
 	zlog           *logging.Logger
+	zkpki_ccbor    cbor.EncMode
+	zkpki_network  uint64
+	zkpki_voteDoc  *pki.Document
+	zkpki_voteSalt uint64
 	/****** ZK-PKI ******/
 }
 

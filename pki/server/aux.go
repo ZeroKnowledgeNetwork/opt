@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/ZeroKnowledgeNetwork/appchain-agent/clients/go/chainbridge"
+	"github.com/fxamacker/cbor/v2"
 	"github.com/katzenpost/hpqc/hash"
 	"github.com/katzenpost/hpqc/rand"
 	"github.com/katzenpost/hpqc/sign"
@@ -79,33 +80,17 @@ func (s *state) fsm() <-chan time.Time {
 		}
 
 	case stateSubmitDescriptor:
-		pk := hash.Sum256(s.authorizedNode.IdentityKey)
-		desc, ok := s.descriptors[s.votingEpoch][pk]
-		if ok {
-			s.zkpki_submitDescriptor(desc, s.votingEpoch)
-		} else {
-			s.zlog.Errorf("❌ No descriptor for epoch %d", s.votingEpoch)
-		}
+		s.zkpki_submitDescriptor(s.votingEpoch)
 		s.state = stateCommitVote
 		sleep = nextDeadline(DeadlineDescriptorProcessed)
 
 	case stateCommitVote:
-		doc, err := s.getVote(s.votingEpoch)
-		if err == nil {
-			s.zkpki_commitVote(doc, s.votingEpoch)
-		} else {
-			s.zlog.Errorf("❌ Failed to compute vote for epoch %v: %s", s.votingEpoch, err)
-		}
+		s.zkpki_commitVote(s.votingEpoch)
 		s.state = stateRevealVote
 		sleep = nextDeadline(DeadlineAuthorityVote)
 
 	case stateRevealVote:
-		doc, err := s.getVote(s.votingEpoch)
-		if err == nil {
-			s.zkpki_revealVote(doc, s.votingEpoch)
-		} else {
-			s.zlog.Errorf("❌ Failed to compute vote for epoch %v: %s", s.votingEpoch, err)
-		}
+		s.zkpki_revealVote(s.votingEpoch)
 		s.state = stateAcceptVote
 		sleep = nextDeadline(DeadlineAuthorityReveal)
 
@@ -152,7 +137,14 @@ func (s *state) zkpki_jitter() time.Duration {
 	return time.Duration(rand.NewMath().Float64() * float64(JitterMax))
 }
 
-func (s *state) zkpki_submitDescriptor(desc *pki.MixDescriptor, epoch uint64) {
+func (s *state) zkpki_submitDescriptor(epoch uint64) {
+	pk := hash.Sum256(s.authorizedNode.IdentityKey)
+	desc, ok := s.descriptors[s.votingEpoch][pk]
+	if !ok {
+		s.zlog.Errorf("❌ No descriptor for epoch %d", s.votingEpoch)
+		return
+	}
+
 	// Register the mix descriptor with the appchain, which will:
 	// - reject redundant descriptors (even those that didn't change)
 	// - reject descriptors if document for the epoch exists
@@ -163,24 +155,33 @@ func (s *state) zkpki_submitDescriptor(desc *pki.MixDescriptor, epoch uint64) {
 	s.zlog.Noticef("✅ submitDescriptor: Set mix descriptor for node %v, epoch=%v (in epoch=%v)", desc.Name, epoch, epochCurrent)
 }
 
-func (s *state) zkpki_sendVote(doc *pki.Document, epoch uint64) {
-	if err := s.chPKISetDocument(doc); err != nil {
-		s.zlog.Errorf("❌ sendVote: Error setting document for epoch %d: %v", epoch, err)
-	} else {
-		s.zlog.Noticef("✅ sendVote: Set document for epoch %d", epoch)
+func (s *state) zkpki_commitVote(epoch uint64) {
+	var err error
+	s.zkpki_voteDoc, err = s.getVote(epoch)
+	if err != nil {
+		s.zlog.Errorf("❌ Failed to compute vote for epoch %v: %s", epoch, err)
+		return
 	}
-}
 
-func (s *state) zkpki_commitVote(doc *pki.Document, epoch uint64) {
-	if err := s.chConsensusCommitVote(doc); err != nil {
+	// generate a random salt to hide the vote, store it for the reveal
+	s.zkpki_voteSalt = rand.NewMath().Uint64()
+
+	if err := s.chConsensusCommitVote(s.zkpki_network, s.zkpki_voteSalt, s.zkpki_voteDoc); err != nil {
 		s.zlog.Errorf("❌ commitVote: epoch %d: %v", epoch, err)
+		s.zkpki_voteDoc = nil
 	} else {
 		s.zlog.Noticef("✅ commitVote: epoch %d", epoch)
 	}
 }
 
-func (s *state) zkpki_revealVote(doc *pki.Document, epoch uint64) {
-	if err := s.chConsensusRevealVote(doc); err != nil {
+func (s *state) zkpki_revealVote(epoch uint64) {
+	// if no doc from commit, then no reveal
+	if s.zkpki_voteDoc == nil {
+		s.zlog.Errorf("❌ vote not computed for epoch %v:", epoch)
+		return
+	}
+
+	if err := s.chConsensusRevealVote(s.zkpki_network, s.zkpki_voteSalt, s.zkpki_voteDoc); err != nil {
 		s.zlog.Errorf("❌ revealVote: epoch %d: %v", epoch, err)
 	} else {
 		s.zlog.Noticef("✅ revealVote: epoch %d", epoch)
@@ -192,7 +193,7 @@ func (s *state) zkpki_backgroundFetchConsensus(epoch uint64) {
 	_, ok := s.documents[epoch]
 	if !ok {
 		s.Go(func() {
-			doc, err := s.chConsensusGetConsensus(epoch)
+			doc, err := s.chConsensusGetConsensus(s.zkpki_network, epoch)
 			if err != nil {
 				s.zlog.Debugf("FetchConsensus: Failed to fetch document for epoch %v: %v", epoch, err)
 				return
@@ -246,6 +247,8 @@ func (s *state) zkpki_getVote(epoch uint64) (*pki.Document, error) {
 }
 
 func zkpki_newState(st *state) error {
+	var err error
+
 	st.zlog = st.s.logBackend.GetLogger("state/zkpki")
 
 	st.zlog.Debugf("State initialized with epoch Period: %s", epochtime.Period)
@@ -255,6 +258,12 @@ func zkpki_newState(st *state) error {
 	st.zlog.Debugf("State initialized with DeadlineAuthorityVote: %s", DeadlineAuthorityVote)
 	st.zlog.Debugf("State initialized with DeadlinePublishConsensus: %s", DeadlinePublishConsensus)
 	st.zlog.Debugf("State initialized with DeadlineDocGeneration: %s", DeadlineDocGeneration)
+
+	// cbor.EncMode a la katzenpost:core/pki/document.go
+	st.zkpki_ccbor, err = cbor.CanonicalEncOptions().EncMode()
+	if err != nil {
+		panic(err)
+	}
 
 	// Init AppChain communications (chainbridge)
 	chlog := st.s.logBackend.GetLogger("state/zkpki/chain")
@@ -294,7 +303,6 @@ func zkpki_newState(st *state) error {
 
 	// load the authorized node's identity public key
 	pkiSignatureScheme := signSchemes.ByName(st.s.cfg.Server.PKISignatureScheme)
-	var err error
 	var identityPublicKey sign.PublicKey
 	if filepath.IsAbs(v.IdentityPublicKeyPem) {
 		identityPublicKey, err = signpem.FromPublicPEMFile(v.IdentityPublicKeyPem, pkiSignatureScheme)
@@ -334,6 +342,9 @@ func zkpki_newState(st *state) error {
 	if err = st.chConsensusRegister(); err != nil {
 		st.zlog.Fatalf("❌ Error: consensus registration failed:", err)
 	}
+
+	// Set the Network ID (static for now)
+	st.zkpki_network = 1000
 
 	return nil
 }
