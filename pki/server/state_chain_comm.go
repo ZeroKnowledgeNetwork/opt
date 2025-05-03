@@ -124,58 +124,6 @@ func (s *state) chPKIGetGenesisEpoch() (uint64, error) {
 	return genesisEpoch, nil
 }
 
-func (s *state) chPKIGetDocument(epoch uint64) (*pki.Document, error) {
-	chCommand := fmt.Sprintf(chainbridge.Cmd_pki_getDocucment, epoch)
-	chResponse, err := s.chainBridge.Command(chCommand, nil)
-	if err != nil {
-		return nil, fmt.Errorf("ChainBridge command error: %v", err)
-	}
-
-	chDoc, err := s.chainBridge.GetDataBytes(chResponse)
-	if err != nil {
-		return nil, err
-	}
-
-	var doc pki.Document
-	// X: if err = doc.UnmarshalCertificate(chDoc); err != nil {
-	if err = cbor.Unmarshal(chDoc, (*pki.Document)(&doc)); err != nil {
-		return nil, fmt.Errorf("Failed to unmarshal PKI document: %v", err)
-	}
-
-	return &doc, nil
-}
-
-// register the PKI doc with the appchain
-func (s *state) chPKISetDocument(doc *pki.Document) error {
-	//cbor.EncMode a la katzenpost:core/pki/document.go
-	ccbor, err := cbor.CanonicalEncOptions().EncMode()
-	if err != nil {
-		panic(err)
-	}
-
-	// register with the appchain an unsigned certificate-less doc,
-	// so authorities submit the same doc hash as their vote
-	// X: payload, err := doc.MarshalCertificate()
-	payload, err := ccbor.Marshal((*pki.Document)(doc))
-	if err != nil {
-		return fmt.Errorf("Failed to marshal PKI document: %v", err)
-	}
-
-	chCommand := fmt.Sprintf(chainbridge.Cmd_pki_setDocument, doc.Epoch)
-	chResponse, err := s.chainBridge.Command(chCommand, payload)
-	s.zlog.Debugf("ChainBridge response (%s): %+v", chCommand, chResponse)
-	if err != nil {
-		return fmt.Errorf("ChainBridge command error: %v", err)
-	}
-
-	// ignore the most likely chResponse.Error: "Document already exists for the epoch"
-	// if chResponse.Error != "" {
-	//   return fmt.Errorf("state: ChainBridge response error: %v", chResponse.Error)
-	// }
-
-	return nil
-}
-
 // get number of descriptors for the given epoch from appchain
 func (s *state) chPKIGetMixDescriptorCounter(epoch uint64) (uint64, error) {
 	chCommand := fmt.Sprintf(chainbridge.Cmd_pki_getMixDescriptorCounter, epoch)
