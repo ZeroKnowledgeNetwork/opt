@@ -6,8 +6,8 @@ import (
 	"errors"
 	"flag"
 	"fmt"
-	"io"
 	"net/http"
+	"net/http/httputil"
 	"os"
 	"path"
 	"path/filepath"
@@ -170,45 +170,32 @@ func (s *proxyRequestHandler) OnCommand(cmd cborplugin.Command) error {
 
 		uri := request.URL.Path
 		uri = uri[1:]
-		target, ok := s.cfg.Networks[uri]
+		_, ok := s.cfg.Networks[uri]
 		if !ok {
 			s.log.Error("URI not matched with config Networks")
 			return s.sendError(r.ID, r.SURB, "URI not configured in networks")
 		}
 
-		newRequest, err := http.NewRequest(request.Method, target, request.Body)
+		resp, err := http.DefaultTransport.RoundTrip(request)
 		if err != nil {
-			s.log.Errorf("http.NewRequest failed: %s", err)
-			return s.sendError(r.ID, r.SURB, "Failed to create HTTP request")
-		}
-
-		newRequest.Header.Set("Content-Type", request.Header.Get("Content-Type"))
-		newRequest.Header.Set("Content-Length", request.Header.Get("Content-Length"))
-
-		resp, err := http.DefaultClient.Do(newRequest)
-		if err != nil {
-			s.log.Errorf("http.DefaultClient.Do failed: %s", err)
+			s.log.Errorf("http.DefaultTransport.RoundTrip failed: %s", err)
 			return s.sendError(r.ID, r.SURB, "HTTP request failed")
 		}
-		defer resp.Body.Close()
 
-		resp.Header["Host"] = []string{request.URL.Host}
-
-		body, err := io.ReadAll(resp.Body)
+		rawResp, err := httputil.DumpResponse(resp, true)
 		if err != nil {
-			s.log.Errorf("io.ReadAll(resp.Body) failed: %s", err)
-			return s.sendError(r.ID, r.SURB, fmt.Sprintf("io.ReadAll(resp.Body) failed: %s", err.Error()))
+			return s.sendError(r.ID, r.SURB, fmt.Sprintf("httputil.DumpResponse(resp) failed: %s", err.Error()))
 		}
 
-		s.log.Debugf("Reply payload: %s", body)
+		s.log.Debugf("Reply payload: %s", rawResp)
 
 		var response *http_proxy.Response
-		if len(body) > MaxPayloadSize {
+		if len(rawResp) > MaxPayloadSize {
 			s.log.Error("HTTP response body exceeds max Sphinx payload")
 			return s.sendError(r.ID, r.SURB, "HTTP response is too big")
 		} else {
 			response = &http_proxy.Response{
-				Payload: body,
+				Payload: rawResp,
 			}
 		}
 

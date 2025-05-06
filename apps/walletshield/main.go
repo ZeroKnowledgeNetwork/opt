@@ -10,7 +10,7 @@ import (
 	"fmt"
 	"math"
 	"net/http"
-	"net/url"
+	"net/http/httputil"
 	"os"
 	"strings"
 	"time"
@@ -159,22 +159,15 @@ func main() {
 
 func (s *Server) Handler(w http.ResponseWriter, req *http.Request) {
 	s.log.Infof("Received HTTP request for %s", req.URL)
-
-	myurl, err := url.Parse(req.RequestURI)
+	buf, err := httputil.DumpRequest(req, true)
 	if err != nil {
-		s.log.Errorf("url.Parse(req.RequestURI) failed: %s", err)
-		return
+		s.log.Errorf("httputil.DumpRequest failed: %s", err)
 	}
-	req.URL = myurl
-	req.RequestURI = ""
-
-	buf := new(bytes.Buffer)
-	req.Write(buf)
 
 	request := new(http_proxy.Request)
-	request.Payload = buf.Bytes()
+	request.Payload = buf
 
-	s.log.Debugf("RAW HTTP REQUEST:\n%s", string(buf.Bytes()))
+	s.log.Debugf("RAW HTTP REQUEST:\n%s", string(buf))
 
 	blob, err := cbor.Marshal(request)
 	if err != nil {
