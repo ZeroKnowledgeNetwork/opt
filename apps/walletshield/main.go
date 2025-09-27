@@ -129,7 +129,12 @@ func main() {
 
 	time.Sleep(time.Second * 3) // XXX ugly hack but works: FIXME
 
-	thin := thin.NewThinClient(cfg)
+	logging := &config.Logging{
+		Disable: false,
+		Level:   level.String(),
+	}
+
+	thin := thin.NewThinClient(thin.FromConfig(cfg), logging)
 	err = thin.Dial()
 	if err != nil {
 		panic(err)
