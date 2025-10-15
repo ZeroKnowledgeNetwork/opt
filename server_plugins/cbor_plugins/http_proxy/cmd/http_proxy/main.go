@@ -22,6 +22,7 @@ import (
 	"github.com/katzenpost/katzenpost/core/log"
 	"github.com/katzenpost/katzenpost/server/cborplugin"
 
+	"github.com/ZeroKnowledgeNetwork/opt/common"
 	"github.com/ZeroKnowledgeNetwork/opt/server_plugins/cbor_plugins/http_proxy"
 )
 
@@ -141,7 +142,12 @@ func (s *proxyRequestHandler) OnCommand(cmd cborplugin.Command) error {
 
 		s.log.Debugf("Raw request payload: %s", req.Payload)
 
-		request, err := http.ReadRequest(bufio.NewReader(bytes.NewReader(req.Payload)))
+		requestPayload, err := common.DecompressData(req.Payload)
+		if err != nil {
+			s.log.Errorf("common.DecompressData failed: %s", err)
+			return s.sendError(r.ID, r.SURB, "Failed to decompress request")
+		}
+		request, err := http.ReadRequest(bufio.NewReader(bytes.NewReader(requestPayload)))
 		if err != nil {
 			s.log.Errorf("http.ReadRequest failed: %s", err)
 			return s.sendError(r.ID, r.SURB, "Failed to read HTTP request")
@@ -203,12 +209,17 @@ func (s *proxyRequestHandler) OnCommand(cmd cborplugin.Command) error {
 		s.log.Debugf("Reply payload: %s", body)
 
 		var response *http_proxy.Response
+		responsePayload, err := common.CompressData(body)
+		if err != nil {
+			s.log.Errorf("common.CompressData failed: %s", err)
+			return s.sendError(r.ID, r.SURB, "Failed to compress response")
+		}
 		if len(body) > MaxPayloadSize {
 			s.log.Error("HTTP response body exceeds max Sphinx payload")
 			return s.sendError(r.ID, r.SURB, "HTTP response is too big")
 		} else {
 			response = &http_proxy.Response{
-				Payload: body,
+				Payload: responsePayload,
 			}
 		}
 
