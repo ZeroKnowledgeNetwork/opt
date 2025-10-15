@@ -11,6 +11,7 @@ require (
 	github.com/katzenpost/hpqc v0.0.55
 	github.com/katzenpost/katzenpost v0.0.48
 	github.com/quic-go/quic-go v0.50.0
+	github.com/stretchr/testify v1.9.0
 	go.etcd.io/bbolt v1.3.10
 	golang.org/x/crypto v0.36.0
 	gopkg.in/op/go-logging.v1 v1.0.0-20160211212156-b2cb9fa56473
@@ -23,6 +24,7 @@ require (
 	filippo.io/mlkem768 v0.0.0-20240221181710-5ce91625fdc1 // indirect
 	github.com/aymanbagabas/go-osc52/v2 v2.0.1 // indirect
 	github.com/charmbracelet/lipgloss v0.10.0 // indirect
+	github.com/davecgh/go-spew v1.1.1 // indirect
 	github.com/go-faster/xor v1.0.0 // indirect
 	github.com/go-logfmt/logfmt v0.6.0 // indirect
 	github.com/go-task/slim-sprig/v3 v3.0.0 // indirect
@@ -43,6 +45,7 @@ require (
 	github.com/oasisprotocol/curve25519-voi v0.0.0-20230904125328-1f23a7beb09a // indirect
 	github.com/oasisprotocol/deoxysii v0.0.0-20220228165953-2091330c22b7 // indirect
 	github.com/onsi/ginkgo/v2 v2.20.2 // indirect
+	github.com/pmezard/go-difflib v1.0.0 // indirect
 	github.com/quic-go/qpack v0.5.1 // indirect
 	github.com/rfjakob/eme v1.1.2 // indirect
 	github.com/rivo/uniseg v0.4.7 // indirect
