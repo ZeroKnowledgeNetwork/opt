@@ -214,7 +214,7 @@ func (s *proxyRequestHandler) OnCommand(cmd cborplugin.Command) error {
 			s.log.Errorf("common.CompressData failed: %s", err)
 			return s.sendError(r.ID, r.SURB, "Failed to compress response")
 		}
-		if len(body) > MaxPayloadSize {
+		if len(responsePayload) > MaxPayloadSize {
 			s.log.Error("HTTP response body exceeds max Sphinx payload")
 			return s.sendError(r.ID, r.SURB, "HTTP response is too big")
 		} else {
