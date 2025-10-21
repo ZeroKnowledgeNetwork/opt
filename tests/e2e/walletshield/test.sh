@@ -7,6 +7,7 @@ status=0
 run_test() {
   test_dir="$1"
   test_case="${test_dir#${dir}}"
+  network="${test_case%%:*}"
   output=$(mktemp)
 
   if [ -f "${test_dir}/in.json" ]; then
@@ -15,7 +16,7 @@ run_test() {
       -H 'Content-Type: application/json' \
       -d "$(cat ${test_dir}/in.json)" \
       --silent \
-      "${uri}${test_case}" |
+      "${uri}${network}" |
       jq -cS . 2>/dev/null >${output}
 
     if ! diff "${test_dir}/out.json" ${output} > /dev/null; then
