@@ -26,6 +26,7 @@ import (
 	"github.com/katzenpost/katzenpost/client2/thin"
 	sConstants "github.com/katzenpost/katzenpost/core/sphinx/constants"
 
+	"github.com/ZeroKnowledgeNetwork/opt/common"
 	"github.com/ZeroKnowledgeNetwork/opt/server_plugins/cbor_plugins/http_proxy"
 )
 
@@ -172,7 +173,11 @@ func (s *Server) Handler(w http.ResponseWriter, req *http.Request) {
 	req.Write(buf)
 
 	request := new(http_proxy.Request)
-	request.Payload = buf.Bytes()
+	request.Payload, err = common.CompressData(buf.Bytes())
+	if err != nil {
+		s.log.Errorf("common.CompressData failed: %s", err)
+		return
+	}
 
 	s.log.Debugf("RAW HTTP REQUEST:\n%s", string(buf.Bytes()))
 
@@ -210,14 +215,23 @@ func (s *Server) Handler(w http.ResponseWriter, req *http.Request) {
 
 	if response.Error != "" {
 		s.log.Errorf("Response Error: %s", response.Error)
-	} else {
-		s.log.Infof("Response: %s", response.Payload)
+		http.Error(w, "Internal Server Error", http.StatusInternalServerError)
+		return
 	}
 
+	responsePayload, err := common.DecompressData(response.Payload)
+	if err != nil {
+		s.log.Errorf("common.DecompressData failed: %s", err)
+		http.Error(w, "Internal Server Error", http.StatusInternalServerError)
+		return
+	}
+
+	s.log.Infof("Response: %s", responsePayload)
+
 	w.Header().Set("Content-Type", "application/json")
-	w.Header().Set("Content-Length", fmt.Sprintf("%d", len(response.Payload)))
+	w.Header().Set("Content-Length", fmt.Sprintf("%d", len(responsePayload)))
 	w.WriteHeader(http.StatusOK)
-	fmt.Fprintf(w, string(response.Payload))
+	fmt.Fprintf(w, string(responsePayload))
 }
 
 func (s *Server) SendTestProbes(testProbeSendDelay int, testProbeCount int, testProbeResponseDelay int) {
@@ -226,7 +240,11 @@ func (s *Server) SendTestProbes(testProbeSendDelay int, testProbeCount int, test
 	buf := new(bytes.Buffer)
 	req.Write(buf)
 	request := new(http_proxy.Request)
-	request.Payload = buf.Bytes()
+	request.Payload, err = common.CompressData(buf.Bytes())
+	if err != nil {
+		s.log.Errorf("common.CompressData failed: %s", err)
+		return
+	}
 	blob, err := cbor.Marshal(request)
 	if err != nil {
 		panic(err)
