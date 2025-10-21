@@ -153,7 +153,8 @@ func (s *proxyRequestHandler) OnCommand(cmd cborplugin.Command) error {
 			return s.sendError(r.ID, r.SURB, "Failed to read HTTP request")
 		}
 
-		s.log.Debugf("REQUEST URL PATH: %s", request.URL.Path)
+		s.log.Debugf("Request URL Path: %s", request.URL.Path)
+		s.log.Debugf("Request payload: %s", requestPayload)
 
 		err = validateRequestURL(request.URL.Path)
 		if err != nil {
