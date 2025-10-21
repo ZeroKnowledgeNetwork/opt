@@ -21,6 +21,7 @@ run_test() {
     if ! diff "${test_dir}/out.json" ${output} > /dev/null; then
       echo "${test_case}: ❌ failed"
       status=1
+      [[ "${WRITE:-0}" == 1 ]] && cp -v ${output} "${test_dir}/out.json"
     else
       echo "${test_case}: ✅ passed"
     fi
@@ -31,6 +32,8 @@ run_test() {
   rm -f ${output}
   sleep 1s
 }
+
+[[ "${WRITE:-0}" == 1 ]] && echo "Writing output."
 
 if [ -z "${1}" ]; then
   for test_dir in $(find "${dir}" -mindepth 1 -type d)
