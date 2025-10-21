@@ -213,6 +213,12 @@ func (s *Server) Handler(w http.ResponseWriter, req *http.Request) {
 		return
 	}
 
+	if response.Error != "" {
+		s.log.Errorf("Response Error: %s", response.Error)
+		http.Error(w, "Internal Server Error", http.StatusInternalServerError)
+		return
+	}
+
 	responsePayload, err := common.DecompressData(response.Payload)
 	if err != nil {
 		s.log.Errorf("common.DecompressData failed: %s", err)
@@ -220,11 +226,7 @@ func (s *Server) Handler(w http.ResponseWriter, req *http.Request) {
 		return
 	}
 
-	if response.Error != "" {
-		s.log.Errorf("Response Error: %s", response.Error)
-	} else {
-		s.log.Infof("Response: %s", responsePayload)
-	}
+	s.log.Infof("Response: %s", responsePayload)
 
 	w.Header().Set("Content-Type", "application/json")
 	w.Header().Set("Content-Length", fmt.Sprintf("%d", len(responsePayload)))
