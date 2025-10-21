@@ -14,9 +14,9 @@ run_test() {
       -X POST \
       -H 'Content-Type: application/json' \
       -d "$(cat ${test_dir}/in.json)" \
-      --output ${output} \
       --silent \
-      "${uri}${test_case}"
+      "${uri}${test_case}" |
+      jq -cS . 2>/dev/null >${output}
 
     if ! diff "${test_dir}/out.json" ${output} > /dev/null; then
       echo "${test_case}: ❌ failed"
