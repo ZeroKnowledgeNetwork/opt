@@ -1,19 +1,19 @@
 module github.com/ZeroKnowledgeNetwork/opt
 
-go 1.23.0
+go 1.24.0
 
 require (
-	github.com/BurntSushi/toml v1.4.0
+	github.com/BurntSushi/toml v1.5.0
 	github.com/ZeroKnowledgeNetwork/appchain-agent/clients/go v0.0.0-20250320061231-774b32400141
 	github.com/carlmjohnson/versioninfo v0.22.5
 	github.com/charmbracelet/log v0.4.0
-	github.com/fxamacker/cbor/v2 v2.7.0
-	github.com/katzenpost/hpqc v0.0.55
-	github.com/katzenpost/katzenpost v0.0.48
-	github.com/quic-go/quic-go v0.50.0
-	github.com/stretchr/testify v1.9.0
-	go.etcd.io/bbolt v1.3.10
-	golang.org/x/crypto v0.36.0
+	github.com/fxamacker/cbor/v2 v2.8.0
+	github.com/katzenpost/hpqc v0.0.68
+	github.com/katzenpost/katzenpost v0.0.63
+	github.com/quic-go/quic-go v0.53.0
+	github.com/stretchr/testify v1.10.0
+	go.etcd.io/bbolt v1.4.2
+	golang.org/x/crypto v0.39.0
 	gopkg.in/op/go-logging.v1 v1.0.0-20160211212156-b2cb9fa56473
 	gopkg.in/yaml.v3 v3.0.1
 )
@@ -39,7 +39,7 @@ require (
 	github.com/lucasb-eyer/go-colorful v1.2.0 // indirect
 	github.com/mattn/go-isatty v0.0.18 // indirect
 	github.com/mattn/go-pointer v0.0.1 // indirect
-	github.com/mattn/go-runewidth v0.0.15 // indirect
+	github.com/mattn/go-runewidth v0.0.16 // indirect
 	github.com/muesli/reflow v0.3.0 // indirect
 	github.com/muesli/termenv v0.15.2 // indirect
 	github.com/oasisprotocol/curve25519-voi v0.0.0-20230904125328-1f23a7beb09a // indirect
@@ -55,10 +55,10 @@ require (
 	gitlab.com/yawning/x448.git v0.0.0-20221003101044-617eb9b7d9b7 // indirect
 	go.uber.org/mock v0.5.0 // indirect
 	golang.org/x/exp v0.0.0-20240904232852-e7e105dedf7e // indirect
-	golang.org/x/mod v0.21.0 // indirect
-	golang.org/x/net v0.37.0 // indirect
-	golang.org/x/sync v0.12.0 // indirect
-	golang.org/x/sys v0.31.0 // indirect
-	golang.org/x/text v0.23.0 // indirect
-	golang.org/x/tools v0.25.0 // indirect
+	golang.org/x/mod v0.25.0 // indirect
+	golang.org/x/net v0.41.0 // indirect
+	golang.org/x/sync v0.16.0 // indirect
+	golang.org/x/sys v0.33.0 // indirect
+	golang.org/x/text v0.27.0 // indirect
+	golang.org/x/tools v0.34.0 // indirect
 )
