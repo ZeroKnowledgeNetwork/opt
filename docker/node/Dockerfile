@@ -11,6 +11,7 @@ RUN \
 
 FROM base AS builder
 
+ARG ENABLE_COMPRESSION=false
 ARG ENABLE_WARPED_EPOCH=false
 ARG KATZENPOST_DIR=/src/katzenpost
 ARG VERSION_GO=1.22.3
@@ -18,7 +19,7 @@ ARG VERSION_GO=1.22.3
 ENV GOROOT=/usr/local/go
 ENV PATH=$GOROOT/bin:$PATH
 ENV GOCACHE=/root/.cache/go-build
-ENV GO_BUILD_OPTS="-trimpath -ldflags=-buildid= -ldflags=-X=github.com/katzenpost/katzenpost/core/epochtime.WarpedEpoch=${ENABLE_WARPED_EPOCH}"
+ENV GO_BUILD_OPTS="-trimpath -ldflags=-buildid= -ldflags=-X=github.com/katzenpost/katzenpost/core/epochtime.WarpedEpoch=${ENABLE_WARPED_EPOCH} -ldflags=-X=github.com/ZeroKnowledgeNetwork/opt/common.CompressionEnabled=${ENABLE_COMPRESSION}"
 
 # Install build dependencies
 RUN \
