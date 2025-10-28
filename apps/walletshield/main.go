@@ -94,6 +94,7 @@ func main() {
 	var testProbeCount int
 	var testProbeResponseDelay int
 	var testProbeSendDelay int
+	var thinClientOnly bool
 
 	flag.StringVar(&configPath, "config", "", "file path of the client configuration TOML file")
 	flag.IntVar(&delayStart, "delay_start", 0, "max random seconds to delay start")
@@ -105,6 +106,7 @@ func main() {
 	flag.IntVar(&testProbeResponseDelay, "probe_response_delay", 0, "test probe response deplay")
 	flag.IntVar(&testProbeSendDelay, "probe_send_delay", 10, "test probe delay between probes")
 	flag.IntVar(&timeout, "timeout", timeout, "seconds to wait for a request")
+	flag.BoolVar(&thinClientOnly, "thin", false, "use thin client mode (connect to existing daemon)")
 	flag.Parse()
 
 	if listenAddr == "" && !testProbe {
@@ -131,32 +133,48 @@ func main() {
 	}
 
 	// start client2 daemon
-	cfg, err := config.LoadFile(configPath)
-	if err != nil {
-		panic(err)
-	}
+	var d *client2.Daemon
+	var cfgThin *thin.Config
+	if !thinClientOnly {
+		cfg, err := config.LoadFile(configPath)
+		if err != nil {
+			panic(err)
+		}
 
-	if listenAddrClient != "" {
-		cfg.ListenAddress = listenAddrClient
-	}
+		if listenAddrClient != "" {
+			cfg.ListenAddress = listenAddrClient
+		}
 
-	d, err := client2.NewDaemon(cfg)
-	if err != nil {
-		panic(err)
-	}
-	err = d.Start()
-	if err != nil {
-		panic(err)
-	}
+		d, err := client2.NewDaemon(cfg)
+		if err != nil {
+			panic(err)
+		}
+		err = d.Start()
+		if err != nil {
+			panic(err)
+		}
 
-	time.Sleep(time.Second * 3) // XXX ugly hack but works: FIXME
+		cfgThin = thin.FromConfig(cfg)
+
+		fmt.Println("Sleeping for 3 seconds to let the client daemon startup...")
+		time.Sleep(time.Second * 3) // XXX ugly hack but works: FIXME
+	} else {
+		cfgThin, err = thin.LoadFile(configPath)
+
+		if listenAddrClient != "" {
+			cfgThin.Address = listenAddrClient
+		}
+		if err != nil {
+			panic(fmt.Errorf("failed to open thin client config: %s", err))
+		}
+	}
 
 	logging := &config.Logging{
 		Disable: false,
 		Level:   level.String(),
 	}
 
-	thin := thin.NewThinClient(thin.FromConfig(cfg), logging)
+	thin := thin.NewThinClient(cfgThin, logging)
 	err = thin.Dial()
 	if err != nil {
 		panic(err)
@@ -171,6 +189,7 @@ func main() {
 
 	if testProbe {
 		server.SendTestProbes(testProbeSendDelay, testProbeCount, testProbeResponseDelay)
+		d.Shutdown()
 	} else {
 		http.HandleFunc("/", server.Handler)
 		err := http.ListenAndServe(listenAddr, nil)

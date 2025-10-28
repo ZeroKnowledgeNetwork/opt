@@ -81,12 +81,12 @@ $(net_dir)/walletshield.$(distro): $(katzenpost_dir)/docker/$(distro)_base.stamp
 .PHONY: walletshield-probe
 walletshield-probe: $(net_dir)/walletshield.$(distro) $(net_dir)/running.stamp | $(cache_dir)
 	$(docker) run --network=host $(docker_args) $(mount_net_name) --rm katzenpost-$(distro)_base \
-		/$(net_name)/walletshield.$(distro) -config /$(net_name)/client2/client.toml -log_level DEBUG -probe --probe_count 3
+		/$(net_name)/walletshield.$(distro) -config /$(net_name)/client2/thinclient.toml -thin -log_level DEBUG -probe --probe_count 3
 
 .PHONY: walletshield-start
 walletshield-start: $(net_dir)/walletshield.$(distro) $(net_dir)/running.stamp | $(cache_dir)
 	$(docker) run -d --network=host $(docker_args) $(mount_net_name) --name walletshield katzenpost-$(distro)_base \
-		/$(net_name)/walletshield.$(distro) -config /$(net_name)/client2/client.toml -listen :7070 -log_level DEBUG
+		/$(net_name)/walletshield.$(distro) -config /$(net_name)/client2/thinclient.toml -thin -listen :7070 -log_level DEBUG
 
 .PHONY: walletshield-logs
 walletshield-logs:
