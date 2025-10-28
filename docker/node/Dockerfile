@@ -50,7 +50,8 @@ RUN --mount=type=cache,target="${GOCACHE}" \
   && build cmd/fetch fetch \
   && build cmd/kpclientd kpclientd \
   && build cmd/ping ping \
-  # server
+  # servers
+  && build cmd/dirauth dirauth \
   && build cmd/server server \
   ## services
   && build cmd/courier courier \
