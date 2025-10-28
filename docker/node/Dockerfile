@@ -14,7 +14,7 @@ FROM base AS builder
 ARG ENABLE_COMPRESSION=false
 ARG ENABLE_WARPED_EPOCH=false
 ARG KATZENPOST_DIR=/src/katzenpost
-ARG VERSION_GO=1.22.3
+ARG VERSION_GO=1.24.4
 
 ENV GOROOT=/usr/local/go
 ENV PATH=$GOROOT/bin:$PATH
@@ -47,17 +47,14 @@ RUN --mount=type=cache,target="${GOCACHE}" \
   # a function to build and move the binary
   && build() { cd ${KATZENPOST_DIR}/$1 ; b=$(basename $1) ; go build ${GO_BUILD_OPTS} ; chmod u+x $b ; mv $b /dest/$2; } \
   # clients
-  && build authority/cmd/fetch fetch \
-  && build ping ping \
+  && build cmd/fetch fetch \
+  && build cmd/kpclientd kpclientd \
+  && build cmd/ping ping \
   # server
-  && build server/cmd/server server \
-  ## servicenode plugins
-  && build http/proxy/client proxy_client \
-  && build http/proxy/server proxy_server \
-  && build memspool/server/cmd/memspool memspool \
-  && build pigeonhole/server/cmd/pigeonhole pigeonhole \
-  && build panda/server/cmd/panda_server panda_server \
-  && build server_plugins/cbor_plugins/echo-go echo_server
+  && build cmd/server server \
+  ## services
+  && build cmd/courier courier \
+  && build cmd/echo-plugin echo-plugin
 
 # Build ZKN mix network components
 RUN --mount=type=cache,target="${GOCACHE}" \
