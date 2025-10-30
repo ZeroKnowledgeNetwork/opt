@@ -1,4 +1,6 @@
 warped?=true
+compression?=true
+
 mixes=3
 auths=3
 gateways=1
@@ -13,7 +15,7 @@ sh=$(shell if echo ${distro}|grep -q alpine; then echo sh; else echo bash; fi)
 cache_dir=cache
 log_level=DEBUG
 docker=$(shell if which podman|grep -q .; then echo podman; else echo docker; fi)
-ldflags="-extldflags '-Wl,-z,stack-size=0x1F40000' -buildid= -X github.com/katzenpost/katzenpost/core/epochtime.WarpedEpoch=${warped}"
+ldflags="-extldflags '-Wl,-z,stack-size=0x1F40000' -buildid= -X github.com/katzenpost/katzenpost/core/epochtime.WarpedEpoch=${warped} -X github.com/ZeroKnowledgeNetwork/opt/common.CompressionEnabled=${compression}"
 uid?=$(shell [ "$$SUDO_UID" != "" ] && echo "$$SUDO_UID" || id -u)
 gid?=$(shell [ "$$SUDO_GID" != "" ] && echo "$$SUDO_GID" || id -g)
 docker_user?=$(shell if echo ${docker}|grep -q podman; then echo 0:0; else echo ${uid}:${gid}; fi)
@@ -79,12 +81,17 @@ $(net_dir)/walletshield.$(distro): $(katzenpost_dir)/docker/$(distro)_base.stamp
 .PHONY: walletshield-probe
 walletshield-probe: $(net_dir)/walletshield.$(distro) $(net_dir)/running.stamp | $(cache_dir)
 	$(docker) run --network=host $(docker_args) $(mount_net_name) --rm katzenpost-$(distro)_base \
-		/$(net_name)/walletshield.$(distro) -config /$(net_name)/client2/client.toml -log_level DEBUG -probe --probe_count 3
+		/$(net_name)/walletshield.$(distro) -config /$(net_name)/client2/thinclient.toml -thin -log_level DEBUG -probe --probe_count 3
+
+.PHONY: walletshield-probe-full
+walletshield-probe-full: $(net_dir)/walletshield.$(distro) $(net_dir)/running.stamp | $(cache_dir)
+	$(docker) run --network=host $(docker_args) $(mount_net_name) --rm katzenpost-$(distro)_base \
+		/$(net_name)/walletshield.$(distro) -config /$(net_name)/client2/client.toml --listen_client :64333 -log_level DEBUG -probe --probe_count 3
 
 .PHONY: walletshield-start
 walletshield-start: $(net_dir)/walletshield.$(distro) $(net_dir)/running.stamp | $(cache_dir)
 	$(docker) run -d --network=host $(docker_args) $(mount_net_name) --name walletshield katzenpost-$(distro)_base \
-		/$(net_name)/walletshield.$(distro) -config /$(net_name)/client2/client.toml -listen :7070 -log_level DEBUG
+		/$(net_name)/walletshield.$(distro) -config /$(net_name)/client2/thinclient.toml -thin -listen :7070 -log_level DEBUG
 
 .PHONY: walletshield-logs
 walletshield-logs:

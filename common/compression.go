@@ -6,9 +6,16 @@ import (
 	"io"
 )
 
+// CompressionEnabled is a flag that can be passed at build time to disable compression
+var CompressionEnabled string = "true"
+
 func CompressData(data []byte) ([]byte, error) {
+	if CompressionEnabled != "true" {
+		return data, nil
+	}
+
 	var buf bytes.Buffer
-	writer, err := flate.NewWriter(&buf, flate.BestCompression)
+	writer, err := flate.NewWriter(&buf, flate.BestSpeed)
 	if err != nil {
 		return nil, err
 	}
@@ -24,6 +31,10 @@ func CompressData(data []byte) ([]byte, error) {
 }
 
 func DecompressData(data []byte) ([]byte, error) {
+	if CompressionEnabled != "true" {
+		return data, nil
+	}
+
 	reader := flate.NewReader(bytes.NewReader(data))
 	defer reader.Close()
 	decompressedData, err := io.ReadAll(reader)

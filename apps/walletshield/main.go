@@ -38,9 +38,31 @@ var (
 	UserForwardPayloadLength = 30000
 )
 
-func sendRequest(thin *thin.ThinClient, payload []byte) ([]byte, error) {
+func sendRequest(thin *thin.ThinClient, httpRequestBytes []byte) ([]byte, error) {
+	// Compress the HTTP request
+	compressedPayload, err := common.CompressData(httpRequestBytes)
+	if err != nil {
+		return nil, fmt.Errorf("common.CompressData failed: %w", err)
+	}
+
+	// Create the request wrapper
+	request := &http_proxy.Request{
+		Payload: compressedPayload,
+	}
+
+	// Marshal to CBOR
+	blob, err := cbor.Marshal(request)
+	if err != nil {
+		return nil, fmt.Errorf("cbor.Marshal failed: %w", err)
+	}
+
+	// Validate payload size
+	if len(blob) > UserForwardPayloadLength {
+		return nil, fmt.Errorf("payload size %d exceeds maximum %d bytes", len(blob), UserForwardPayloadLength)
+	}
+
 	surbID := &[sConstants.SURBIDLength]byte{}
-	_, err := rand.Reader.Read(surbID[:])
+	_, err = rand.Reader.Read(surbID[:])
 	if err != nil {
 		panic(err)
 	}
@@ -53,7 +75,7 @@ func sendRequest(thin *thin.ThinClient, payload []byte) ([]byte, error) {
 	nodeId := hash.Sum256(target.MixDescriptor.IdentityKey)
 
 	timeoutCtx, _ := context.WithTimeout(context.TODO(), time.Duration(timeout)*time.Second)
-	return thin.BlockingSendMessage(timeoutCtx, payload, &nodeId, target.RecipientQueueID)
+	return thin.BlockingSendMessage(timeoutCtx, blob, &nodeId, target.RecipientQueueID)
 }
 
 type Server struct {
@@ -72,6 +94,7 @@ func main() {
 	var testProbeCount int
 	var testProbeResponseDelay int
 	var testProbeSendDelay int
+	var thinClientOnly bool
 
 	flag.StringVar(&configPath, "config", "", "file path of the client configuration TOML file")
 	flag.IntVar(&delayStart, "delay_start", 0, "max random seconds to delay start")
@@ -83,6 +106,7 @@ func main() {
 	flag.IntVar(&testProbeResponseDelay, "probe_response_delay", 0, "test probe response deplay")
 	flag.IntVar(&testProbeSendDelay, "probe_send_delay", 10, "test probe delay between probes")
 	flag.IntVar(&timeout, "timeout", timeout, "seconds to wait for a request")
+	flag.BoolVar(&thinClientOnly, "thin", false, "use thin client mode (connect to existing daemon)")
 	flag.Parse()
 
 	if listenAddr == "" && !testProbe {
@@ -109,27 +133,48 @@ func main() {
 	}
 
 	// start client2 daemon
-	cfg, err := config.LoadFile(configPath)
-	if err != nil {
-		panic(err)
+	var d *client2.Daemon
+	var cfgThin *thin.Config
+	if !thinClientOnly {
+		cfg, err := config.LoadFile(configPath)
+		if err != nil {
+			panic(err)
+		}
+
+		if listenAddrClient != "" {
+			cfg.ListenAddress = listenAddrClient
+		}
+
+		d, err := client2.NewDaemon(cfg)
+		if err != nil {
+			panic(err)
+		}
+		err = d.Start()
+		if err != nil {
+			panic(err)
+		}
+
+		cfgThin = thin.FromConfig(cfg)
+
+		fmt.Println("Sleeping for 3 seconds to let the client daemon startup...")
+		time.Sleep(time.Second * 3) // XXX ugly hack but works: FIXME
+	} else {
+		cfgThin, err = thin.LoadFile(configPath)
+
+		if listenAddrClient != "" {
+			cfgThin.Address = listenAddrClient
+		}
+		if err != nil {
+			panic(fmt.Errorf("failed to open thin client config: %s", err))
+		}
 	}
 
-	if listenAddrClient != "" {
-		cfg.ListenAddress = listenAddrClient
+	logging := &config.Logging{
+		Disable: false,
+		Level:   level.String(),
 	}
 
-	d, err := client2.NewDaemon(cfg)
-	if err != nil {
-		panic(err)
-	}
-	err = d.Start()
-	if err != nil {
-		panic(err)
-	}
-
-	time.Sleep(time.Second * 3) // XXX ugly hack but works: FIXME
-
-	thin := thin.NewThinClient(cfg)
+	thin := thin.NewThinClient(cfgThin, logging)
 	err = thin.Dial()
 	if err != nil {
 		panic(err)
@@ -144,6 +189,7 @@ func main() {
 
 	if testProbe {
 		server.SendTestProbes(testProbeSendDelay, testProbeCount, testProbeResponseDelay)
+		d.Shutdown()
 	} else {
 		http.HandleFunc("/", server.Handler)
 		err := http.ListenAndServe(listenAddr, nil)
@@ -172,33 +218,17 @@ func (s *Server) Handler(w http.ResponseWriter, req *http.Request) {
 	buf := new(bytes.Buffer)
 	req.Write(buf)
 
-	request := new(http_proxy.Request)
-	request.Payload, err = common.CompressData(buf.Bytes())
-	if err != nil {
-		s.log.Errorf("common.CompressData failed: %s", err)
-		return
-	}
-
 	s.log.Debugf("RAW HTTP REQUEST:\n%s", string(buf.Bytes()))
 
-	blob, err := cbor.Marshal(request)
-	if err != nil {
-		panic(err)
-	}
-
-	// FIXME: resolve with multi-packet transimssion to transcend payload size limitation
-	// While better solution is developing, pre-emptively reject oversized payloads
-	size := len(blob)
-	if size > UserForwardPayloadLength {
-		s.log.Errorf("(WIP) Rejecting message with oversized payload: %d > %d bytes", size, UserForwardPayloadLength)
-		http.Error(w, "custom 500", http.StatusInternalServerError)
-		return
-	}
-
-	rawReply, err := sendRequest(s.thin, blob)
+	rawReply, err := sendRequest(s.thin, buf.Bytes())
 	if err != nil {
 		s.log.Errorf("Failed to send message: %s", err)
-		http.Error(w, "custom 404", http.StatusNotFound)
+		// Check if it's a payload size error
+		if strings.Contains(err.Error(), "exceeds maximum") {
+			http.Error(w, "custom 500", http.StatusInternalServerError)
+		} else {
+			http.Error(w, "custom 404", http.StatusNotFound)
+		}
 		return
 	}
 
@@ -237,18 +267,13 @@ func (s *Server) Handler(w http.ResponseWriter, req *http.Request) {
 func (s *Server) SendTestProbes(testProbeSendDelay int, testProbeCount int, testProbeResponseDelay int) {
 	url := fmt.Sprintf("http://nowhere/_/probe/%d", testProbeResponseDelay)
 	req, err := http.NewRequest("GET", url, nil)
-	buf := new(bytes.Buffer)
-	req.Write(buf)
-	request := new(http_proxy.Request)
-	request.Payload, err = common.CompressData(buf.Bytes())
 	if err != nil {
-		s.log.Errorf("common.CompressData failed: %s", err)
+		s.log.Errorf("http.NewRequest failed: %s", err)
 		return
 	}
-	blob, err := cbor.Marshal(request)
-	if err != nil {
-		panic(err)
-	}
+	buf := new(bytes.Buffer)
+	req.Write(buf)
+	httpRequestBytes := buf.Bytes()
 
 	var packetsTransmitted, packetsReceived int
 	var rttMin, rttMax, rttTotal float64
@@ -258,7 +283,7 @@ func (s *Server) SendTestProbes(testProbeSendDelay int, testProbeCount int, test
 		packetsTransmitted++
 		t := time.Now()
 
-		_, err = sendRequest(s.thin, blob)
+		_, err = sendRequest(s.thin, httpRequestBytes)
 		elapsed := time.Since(t).Seconds()
 		if err != nil {
 			s.log.Errorf("Probe failed after %.2fs: %s", elapsed, err)

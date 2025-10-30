@@ -6,19 +6,22 @@ RUN \
   --mount=type=cache,target=/var/lib/apt \
   apt-get update && apt-get install -y --no-install-recommends \
   ca-certificates \
+  libsnappy1v5 \
   && rm -rf /var/lib/apt/lists/*
 
 
 FROM base AS builder
 
+ARG ENABLE_COMPRESSION=false
 ARG ENABLE_WARPED_EPOCH=false
 ARG KATZENPOST_DIR=/src/katzenpost
-ARG VERSION_GO=1.22.3
+ARG VERSION_GO=1.24.4
+ARG VERSION_ROCKSDB=10.2.1
 
 ENV GOROOT=/usr/local/go
 ENV PATH=$GOROOT/bin:$PATH
 ENV GOCACHE=/root/.cache/go-build
-ENV GO_BUILD_OPTS="-trimpath -ldflags=-buildid= -ldflags=-X=github.com/katzenpost/katzenpost/core/epochtime.WarpedEpoch=${ENABLE_WARPED_EPOCH}"
+ENV GO_BUILD_OPTS="-trimpath -ldflags=-buildid= -ldflags=-X=github.com/katzenpost/katzenpost/core/epochtime.WarpedEpoch=${ENABLE_WARPED_EPOCH} -ldflags=-X=github.com/ZeroKnowledgeNetwork/opt/common.CompressionEnabled=${ENABLE_COMPRESSION}"
 
 # Install build dependencies
 RUN \
@@ -27,7 +30,26 @@ RUN \
   apt-get update && apt-get install -y --no-install-recommends \
   build-essential \
   git \
-  wget
+  wget \
+  # rocksdb dependencies:
+  cmake \
+  liblz4-dev \
+  libsnappy-dev \
+  libzstd-dev \
+  rsync \
+  zlib1g-dev
+
+# Build RocksDB
+RUN \
+  cd /tmp && \
+  git clone --branch "v${VERSION_ROCKSDB}" --depth 1 https://github.com/facebook/rocksdb.git && \
+  cd rocksdb && \
+  make -j"$(nproc)" shared_lib && \
+  strip librocksdb.so.* && \
+  cp -a librocksdb.so* /usr/local/lib/ && \
+  cp -a include/* /usr/local/include/ && \
+  cd /tmp && rm -rf /tmp/rocksdb && \
+  ldconfig
 
 # Install Go
 RUN f=go${VERSION_GO}.linux-amd64.tar.gz \
@@ -46,17 +68,16 @@ RUN --mount=type=cache,target="${GOCACHE}" \
   # a function to build and move the binary
   && build() { cd ${KATZENPOST_DIR}/$1 ; b=$(basename $1) ; go build ${GO_BUILD_OPTS} ; chmod u+x $b ; mv $b /dest/$2; } \
   # clients
-  && build authority/cmd/fetch fetch \
-  && build ping ping \
-  # server
-  && build server/cmd/server server \
-  ## servicenode plugins
-  && build http/proxy/client proxy_client \
-  && build http/proxy/server proxy_server \
-  && build memspool/server/cmd/memspool memspool \
-  && build pigeonhole/server/cmd/pigeonhole pigeonhole \
-  && build panda/server/cmd/panda_server panda_server \
-  && build server_plugins/cbor_plugins/echo-go echo_server
+  && build cmd/fetch fetch \
+  && build cmd/kpclientd kpclientd \
+  && build cmd/ping ping \
+  # servers
+  && build cmd/dirauth dirauth \
+  && build cmd/server server \
+  ## services
+  && build cmd/courier courier \
+  && build cmd/echo-plugin echo-plugin \
+  && build cmd/replica replica
 
 # Build ZKN mix network components
 RUN --mount=type=cache,target="${GOCACHE}" \
@@ -77,5 +98,9 @@ FROM base AS node
 ARG DIR_BIN=/opt/zkn
 
 COPY --from=builder /dest ${DIR_BIN}
+COPY --from=builder /usr/local/include/ /usr/local/include/
+COPY --from=builder /usr/local/lib/ /usr/local/lib/
+
+RUN ldconfig
 
 CMD ["/bin/bash"]
