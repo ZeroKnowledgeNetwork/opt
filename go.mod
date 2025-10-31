@@ -9,7 +9,7 @@ require (
 	github.com/charmbracelet/log v0.4.0
 	github.com/fxamacker/cbor/v2 v2.8.0
 	github.com/katzenpost/hpqc v0.0.68
-	github.com/katzenpost/katzenpost v0.0.63
+	github.com/katzenpost/katzenpost v0.0.64
 	github.com/quic-go/quic-go v0.53.0
 	github.com/stretchr/testify v1.10.0
 	go.etcd.io/bbolt v1.4.2
