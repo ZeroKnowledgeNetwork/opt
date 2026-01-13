@@ -77,3 +77,5 @@ require (
 	golang.org/x/text v0.27.0 // indirect
 	golang.org/x/tools v0.34.0 // indirect
 )
+
+replace github.com/ZeroKnowledgeNetwork/appchain-agent/clients/go => ./chainbridge
